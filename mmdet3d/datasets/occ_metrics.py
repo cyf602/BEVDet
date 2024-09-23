@@ -144,7 +144,11 @@ class Metric_mIoU():
         print(f'===> mIoU of {self.cnt} samples: ' + str(round(np.nanmean(mIoU[:self.num_classes-1]) * 100, 2)))
         # print(f'===> sample-wise averaged mIoU of {cnt} samples: ' + str(round(np.nanmean(mIoU_avg), 2)))
 
-        return self.class_names, mIoU, self.cnt
+        # return self.class_names, mIoU, self.cnt
+        eval_res={}
+        for c,v in zip(self.class_names,mIoU):
+            eval_res[c]=v
+        return eval_res
 
 
 class Metric_FScore():

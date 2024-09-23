@@ -129,6 +129,8 @@ def add_ann_adj_info(extra_tag):
             scene = nuscenes.get('scene', sample['scene_token'])
             dataset['infos'][id]['occ_path'] = \
                 './data/nuscenes/gts/%s/%s'%(scene['name'], info['token'])
+            dataset['infos'][id]['occv2_path'] = \
+                './data/nuscenes/openocc_v2/%s/%s'%(scene['name'], info['token'])
         with open('./data/nuscenes/%s_infos_%s.pkl' % (extra_tag, set),
                   'wb') as fid:
             pickle.dump(dataset, fid)

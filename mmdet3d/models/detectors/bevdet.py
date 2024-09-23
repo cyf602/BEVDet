@@ -410,7 +410,7 @@ class BEVDet4D(BEVDet):
         B, N, C, H, W = inputs[0].shape
         N = N // self.num_frame
         imgs = inputs[0].view(B, N, self.num_frame, C, H, W)
-        imgs = torch.split(imgs, 1, 2)
+        imgs = torch.split(imgs, 1, 2)#len=nf
         imgs = [t.squeeze(2) for t in imgs]
         sensor2egos, ego2globals, intrins, post_rots, post_trans, bda = \
             inputs[1:7]
