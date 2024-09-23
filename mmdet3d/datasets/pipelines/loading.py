@@ -1,5 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import os
+from typing import Any
 
 import cv2
 import mmcv
@@ -31,6 +32,57 @@ class LoadOccGTFromFile(object):
         return results
 
 
+@PIPELINES.register_module()
+class LoadTempOccGTFromFile(object):
+    """Load multi channel images from a list of separate channel files.
+
+    Expects results['img_filename'] to be a list of filenames.
+    note that we read image in BGR style to align with opencv.imread
+    Args:
+        to_float32 (bool): Whether to convert the img to float32.
+            Defaults to False.
+        color_type (str): Color type of the file. Defaults to 'unchanged'.
+    """
+
+    def __init__(self):
+        pass
+
+    def __call__(self, results):
+        if results['occ_path'] is not None and os.path.exists(results['occ_path']):
+            occ_labels = np.load(results['occ_path'])
+            semantics = occ_labels['semantics']#[200,200,16]
+            flow = occ_labels['flow']
+        else:
+            raise ValueError('LoadOccGTFromFile: Occupancy GT load error!')
+
+        if results.get('next_occ_path') is not None:
+            nextocc_labels=np.load(results['next_occ_path'])
+            results['next_voxel_semantics']=nextocc_labels['semantics']
+        else:
+            results['next_voxel_semantics']=None
+        results['voxel_semantics'] = semantics
+        results['voxel_flow'] = flow
+
+        return results
+
+    def __repr__(self):
+        """str: Return a string that describes the module."""
+        return "{} (data_root={}')".format(
+            self.__class__.__name__, self.data_root)
+   
+@PIPELINES.register_module()
+class LoadOccGTFromFilev2(LoadTempOccGTFromFile):
+    def __call__(self, results) -> Any:
+        occ_gt_path = results['occv2_gt_path']
+        occ_gt_path = os.path.join(occ_gt_path, "labels.npz")
+        occ_labels = np.load(occ_gt_path)
+        semantics = occ_labels['semantics']#[200,200,16]
+        results['voxel_semantics'] = semantics        
+        flow = occ_labels['flow']
+        results['voxel_flow']=flow
+        results['vismask']=occ_labels['vismask']
+        return results     
+    
 @PIPELINES.register_module()
 class LoadMultiViewImageFromFiles(object):
     """Load multi channel images from a list of separate channel files.
@@ -1084,7 +1136,7 @@ class PrepareImageInputs(object):
                 H=img.height, W=img.width, flip=flip, scale=scale)
             resize, resize_dims, crop, flip, rotate = img_augs
             img, post_rot2, post_tran2 = \
-                self.img_transform(img, post_rot,
+                self.img_transform(img, post_rot,#PIL Image
                                    post_tran,
                                    resize=resize,
                                    resize_dims=resize_dims,
@@ -1106,7 +1158,7 @@ class PrepareImageInputs(object):
 
             if self.sequential:
                 assert 'adjacent' in results
-                for adj_info in results['adjacent']:
+                for adj_info in results['adjacent']:#?
                     filename_adj = adj_info['cams'][cam_name]['data_path']
                     img_adjacent = Image.open(filename_adj)
                     if self.opencv_pp:
@@ -1130,7 +1182,7 @@ class PrepareImageInputs(object):
             post_rots.append(post_rot)
             post_trans.append(post_tran)
 
-        if self.sequential:
+        if self.sequential:#T
             for adj_info in results['adjacent']:
                 post_trans.extend(post_trans[:len(cam_names)])
                 post_rots.extend(post_rots[:len(cam_names)])
@@ -1157,13 +1209,113 @@ class PrepareImageInputs(object):
         results['img_inputs'] = self.get_inputs(results)
         return results
 
+@PIPELINES.register_module()
+class PrepareImageInputsv2(PrepareImageInputs):#For new dataset
+    def __init__(self,**kwargs) -> None:
+        super(PrepareImageInputsv2,self).__init__(**kwargs)
+        # super(BEVDet4D, self).__init__(**kwargs)
+    def get_inputs(self, results, flip=None, scale=None):
+        imgs = []
+        sensor2egos = []
+        ego2globals = []
+        intrins = []
+        post_rots = []
+        post_trans = []
+        cam_names = self.choose_cams()
+        results['cam_names'] = cam_names
+        canvas = []
+        for cam_name in cam_names:
+            cam_data = results['curr']['cams'][cam_name]
+            filename = cam_data['data_path']
+            img = Image.open(filename)
+            post_rot = torch.eye(2)
+            post_tran = torch.zeros(2)
 
+            intrin = torch.Tensor(cam_data['cam_intrinsic'])
+
+            sensor2ego, ego2global = \
+                self.get_sensor_transforms(results['curr'], cam_name)
+            # image view augmentation (resize, crop, horizontal flip, rotate)
+            img_augs = self.sample_augmentation(
+                H=img.height, W=img.width, flip=flip, scale=scale)
+            resize, resize_dims, crop, flip, rotate = img_augs
+            img, post_rot2, post_tran2 = \
+                self.img_transform(img, post_rot,#PIL Image
+                                   post_tran,
+                                   resize=resize,
+                                   resize_dims=resize_dims,
+                                   crop=crop,
+                                   flip=flip,
+                                   rotate=rotate)
+
+            # for convenience, make augmentation matrices 3x3
+            post_tran = torch.zeros(3)
+            post_rot = torch.eye(3)
+            post_tran[:2] = post_tran2
+            post_rot[:2, :2] = post_rot2
+
+            if self.is_train and self.data_config.get('pmd', None) is not None:
+                img = self.photo_metric_distortion(img, self.data_config['pmd'])
+
+            canvas.append(np.array(img))
+            imgs.append(self.normalize_img(img))
+
+            if self.sequential:
+                assert 'adjacent' in results
+                for adj_info in results['adjacent']:#?
+                    filename_adj = adj_info['cams'][cam_name]['data_path']
+                    img_adjacent = Image.open(filename_adj)
+                    if self.opencv_pp:
+                        img_adjacent = \
+                            self.img_transform_core_opencv(
+                                img_adjacent,
+                                post_rot[:2, :2],
+                                post_tran[:2],
+                                crop)
+                    else:
+                        img_adjacent = self.img_transform_core(
+                            img_adjacent,
+                            resize_dims=resize_dims,
+                            crop=crop,
+                            flip=flip,
+                            rotate=rotate)
+                    imgs.append(self.normalize_img(img_adjacent))
+            intrins.append(intrin)
+            sensor2egos.append(sensor2ego)
+            ego2globals.append(ego2global)
+            post_rots.append(post_rot)
+            post_trans.append(post_tran)
+
+        if self.sequential:#T
+            for adj_info in results['adjacent']:
+                post_trans.extend(post_trans[:len(cam_names)])
+                post_rots.extend(post_rots[:len(cam_names)])
+                intrins.extend(intrins[:len(cam_names)])
+
+                # align
+                for cam_name in cam_names:
+                    sensor2ego, ego2global = \
+                        self.get_sensor_transforms(adj_info, cam_name)
+                    sensor2egos.append(sensor2ego)
+                    ego2globals.append(ego2global)
+
+        imgs = torch.stack(imgs)
+
+        sensor2egos = torch.stack(sensor2egos)
+        ego2globals = torch.stack(ego2globals)
+        intrins = torch.stack(intrins)
+        post_rots = torch.stack(post_rots)
+        post_trans = torch.stack(post_trans)
+        results['canvas'] = canvas
+        return (imgs, sensor2egos, ego2globals, intrins, post_rots, post_trans)
+    
 @PIPELINES.register_module()
 class LoadAnnotations(object):
 
     def __call__(self, results):
         gt_boxes, gt_labels = results['ann_infos']
-        gt_boxes, gt_labels = torch.Tensor(gt_boxes), torch.tensor(gt_labels)
+        # gt_boxes, gt_labels = torch.Tensor(gt_boxes), torch.tensor(gt_labels)
+        gt_boxes, gt_labels = torch.Tensor(np.array(gt_boxes)), torch.tensor(np.array(gt_labels))
         if len(gt_boxes) == 0:
             gt_boxes = torch.zeros(0, 9)
         results['gt_bboxes_3d'] = \
@@ -1267,4 +1419,47 @@ class BEVAug(object):
                 results['voxel_semantics'] = results['voxel_semantics'][:,::-1,...].copy()
                 results['mask_lidar'] = results['mask_lidar'][:,::-1,...].copy()
                 results['mask_camera'] = results['mask_camera'][:,::-1,...].copy()
+        return results
+
+@PIPELINES.register_module()
+class BEVAugv2(BEVAug):
+    #just for new data
+    def __call__(self, results):
+        gt_boxes = results['gt_bboxes_3d'].tensor
+        gt_boxes[:,2] = gt_boxes[:,2] + 0.5*gt_boxes[:,5]
+        rotate_bda, scale_bda, flip_dx, flip_dy, tran_bda = \
+            self.sample_bda_augmentation()
+        bda_mat = torch.zeros(4, 4)
+        bda_mat[3, 3] = 1
+        gt_boxes, bda_rot = self.bev_transform(gt_boxes, rotate_bda, scale_bda,
+                                               flip_dx, flip_dy, tran_bda)
+        if 'points' in results:
+            points = results['points'].tensor
+            points_aug = (bda_rot @ points[:, :3].unsqueeze(-1)).squeeze(-1)
+            points[:,:3] = points_aug + tran_bda
+            points = results['points'].new_point(points)
+            results['points'] = points
+        bda_mat[:3, :3] = bda_rot
+        bda_mat[:3, 3] = torch.from_numpy(tran_bda)
+        if len(gt_boxes) == 0:
+            gt_boxes = torch.zeros(0, 9)
+        results['gt_bboxes_3d'] = \
+            LiDARInstance3DBoxes(gt_boxes, box_dim=gt_boxes.shape[-1],
+                                 origin=(0.5, 0.5, 0.5))
+        if 'img_inputs' in results:
+            imgs, rots, trans, intrins = results['img_inputs'][:4]
+            post_rots, post_trans = results['img_inputs'][4:]
+            results['img_inputs'] = (imgs, rots, trans, intrins, post_rots,
+                                     post_trans, bda_mat)
+        if 'voxel_semantics' in results:
+            if flip_dx:#颠倒？
+                results['voxel_semantics'] = results['voxel_semantics'][::-1,...].copy()#[200,200,16]?
+                results['voxel_flow'] = results['voxel_flow'][::-1,...].copy()#
+                # results['mask_lidar'] = results['mask_lidar'][::-1,...].copy()
+                # results['mask_camera'] = results['mask_camera'][::-1,...].copy()
+            if flip_dy:
+                results['voxel_semantics'] = results['voxel_semantics'][:,::-1,...].copy()
+                results['voxel_flow'] = results['voxel_flow'][:,::-1,...].copy()
+                # results['mask_lidar'] = results['mask_lidar'][:,::-1,...].copy()
+                # results['mask_camera'] = results['mask_camera'][:,::-1,...].copy()
         return results

@@ -22,7 +22,7 @@ from mmseg.core import DistEvalHook as MMSEG_DistEvalHook
 from mmseg.core import EvalHook as MMSEG_EvalHook
 from mmseg.datasets import build_dataloader as build_mmseg_dataloader
 from mmseg.utils import get_root_logger as get_mmseg_root_logger
-
+from mmdet3d.core.evaluation.eval_hooks import CustomDistEvalHook
 
 def init_random_seed(seed=None, device='cuda'):
     """Initialize random seed.
@@ -299,7 +299,8 @@ def train_detector(model,
             shuffle=False)
         eval_cfg = cfg.get('evaluation', {})
         eval_cfg['by_epoch'] = cfg.runner['type'] != 'IterBasedRunner'
-        eval_hook = MMDET_DistEvalHook if distributed else MMDET_EvalHook
+        # eval_hook = MMDET_DistEvalHook if distributed else MMDET_EvalHook
+        eval_hook = CustomDistEvalHook if distributed else MMDET_EvalHook
         # In this PR (https://github.com/open-mmlab/mmcv/pull/1193), the
         # priority of IterTimerHook has been modified from 'NORMAL' to 'LOW'.
         runner.register_hook(

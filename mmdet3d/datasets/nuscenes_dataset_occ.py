@@ -6,6 +6,10 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 
+from tools.ray_iou.ego_pose_extractor import EgoPoseDataset
+from torch.utils.data import DataLoader
+from .ray_metrics import main as ray_based_miou
+from .ray_metrics import process_one_sample, generate_lidar_rays,save_results
 from .builder import DATASETS
 from .nuscenes_dataset import NuScenesDataset
 from .occ_metrics import Metric_mIoU, Metric_FScore
@@ -58,6 +62,7 @@ class NuScenesDatasetOccpancy(NuScenesDataset):
         input_dict = super(NuScenesDatasetOccpancy, self).get_data_info(index)
         # standard protocol modified from SECOND.Pytorch
         input_dict['occ_gt_path'] = self.data_infos[index]['occ_path']
+        input_dict['occv2_gt_path'] = self.data_infos[index]['occv2_path']
         return input_dict
 
     def evaluate(self, occ_results, runner=None, show_dir=None, **eval_kwargs):
@@ -75,11 +80,11 @@ class NuScenesDatasetOccpancy(NuScenesDataset):
             mask_lidar = occ_gt['mask_lidar'].astype(bool)
             mask_camera = occ_gt['mask_camera'].astype(bool)
             # occ_pred = occ_pred
-            self.occ_eval_metrics.add_batch(occ_pred, gt_semantics, mask_lidar, mask_camera)
+            self.occ_eval_metrics.add_batch(occ_pred['occ_results'], gt_semantics, mask_lidar, mask_camera)
 
             if index%100==0 and show_dir is not None:
                 gt_vis = self.vis_occ(gt_semantics)
-                pred_vis = self.vis_occ(occ_pred)
+                pred_vis = self.vis_occ(occ_pred['occ_results'])
                 mmcv.imwrite(np.concatenate([gt_vis, pred_vis], axis=1),
                              os.path.join(show_dir + "%d.jpg"%index))
 
@@ -106,3 +111,69 @@ class NuScenesDatasetOccpancy(NuScenesDataset):
         occ_bev_vis = occ_bev_vis.reshape(200, 200, 4)[::-1, ::-1, :3]
         occ_bev_vis = cv2.resize(occ_bev_vis,(400,400))
         return occ_bev_vis
+    
+@DATASETS.register_module()
+class NuScenesDatasetOccpancyv2(NuScenesDatasetOccpancy):#for openoccv2
+    # def get_data_info(self, index):
+    #     input_dict = super(NuScenesDatasetOccpancyv2, self).get_data_info(index)
+        
+    #     return input_dict
+    def evaluate_miou(self, occ_results, runner=None, show_dir=None, **eval_kwargs):
+        occ_gts = []
+        flow_gts = []
+        occ_preds = []
+        flow_preds = []
+        lidar_origins = []
+
+        print('\nStarting Evaluation...')
+
+        if 'LightwheelOcc' in self.version:#F
+            # lightwheelocc is 10Hz, downsample to 1/5
+            if self.load_interval == 5:
+                data_infos = self.data_infos
+            elif self.load_interval == 1:
+                print('[WARNING] Please set `load_interval` to 5 in for LightwheelOcc val/test!')
+                print('[WARNING] Current format_results will continue!')
+                data_infos = self.data_infos[::5]
+            else:
+                raise ValueError('Please set `load_interval` to 5 in for LightwheelOcc val/test!')
+
+            ego_pose_dataset = EgoPoseDataset(data_infos, dataset_type='lightwheelocc')
+        else:
+            ego_pose_dataset = EgoPoseDataset(self.data_infos, dataset_type='openocc_v2')
+
+        data_loader_kwargs={
+            "pin_memory": False,
+            "shuffle": False,
+            "batch_size": 1,
+            "num_workers": 8,
+        }
+
+        data_loader = DataLoader(
+            ego_pose_dataset,
+            **data_loader_kwargs,
+        )
+
+        sample_tokens = [info['token'] for info in self.data_infos]
+
+        for i, batch in tqdm(enumerate(data_loader), ncols=50):
+            token = batch[0][0]
+            output_origin = batch[1]
+            
+            data_id = sample_tokens.index(token)
+            info = self.data_infos[data_id]
+
+            occ_gt = np.load(info['occv2_path']+'/labels.npz', allow_pickle=True)
+            gt_semantics = occ_gt['semantics']
+            gt_flow = occ_gt['flow']
+
+            lidar_origins.append(output_origin)
+            occ_gts.append(gt_semantics)
+            flow_gts.append(gt_flow)
+            # if 'occupancy_preds' in occ_results[data_id].keys():
+                # occ_preds.append(occ_results[data_id]['occupancy_preds'].cpu().numpy())
+            # else:
+            occ_preds.append(occ_results[data_id]['occ_results'])
+            flow_preds.append(occ_results[data_id]['flow_results'])
+        # save_results(occ_preds, occ_gts, flow_preds, flow_gts, lidar_origins)
+        ray_based_miou(occ_preds, occ_gts, flow_preds, flow_gts, lidar_origins)

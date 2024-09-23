@@ -12,10 +12,10 @@ from mmcv.runner import (get_dist_info, init_dist, load_checkpoint,
                          wrap_fp16_model)
 
 import mmdet
-from mmdet3d.apis import single_gpu_test
+from mmdet3d.apis import single_gpu_test,multi_gpu_test
 from mmdet3d.datasets import build_dataloader, build_dataset
 from mmdet3d.models import build_model
-from mmdet.apis import multi_gpu_test, set_random_seed
+from mmdet.apis import set_random_seed
 from mmdet.datasets import replace_ImageToTensor
 
 if mmdet.__version__ > '2.23.0':
@@ -262,7 +262,9 @@ def main():
             ]:
                 eval_kwargs.pop(key, None)
             eval_kwargs.update(dict(metric=args.eval, **kwargs))
-            print(dataset.evaluate(outputs, **eval_kwargs))
+            # print(dataset.evaluate(outputs, **eval_kwargs))
+            # dataset.evaluate(outputs[0], **eval_kwargs)
+            dataset.evaluate_miou(outputs,show_dir=args.show_dir, **eval_kwargs)
 
 
 if __name__ == '__main__':

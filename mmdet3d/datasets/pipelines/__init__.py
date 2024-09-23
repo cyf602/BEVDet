@@ -2,12 +2,12 @@
 from .compose import Compose
 from .dbsampler import DataBaseSampler
 from .formating import Collect3D, DefaultFormatBundle, DefaultFormatBundle3D
-from .loading import (LoadAnnotations3D, LoadAnnotations, BEVAug,
+from .loading import (LoadAnnotations3D, LoadAnnotations, BEVAug,BEVAugv2,
                       LoadImageFromFileMono3D, LoadMultiViewImageFromFiles,
                       LoadPointsFromDict, LoadPointsFromFile,
                       LoadPointsFromMultiSweeps, NormalizePointsColor,
                       PointSegClassMapping, PointToMultiViewDepth,
-                      PrepareImageInputs, LoadOccGTFromFile)
+                      PrepareImageInputs, LoadOccGTFromFile,PrepareImageInputsv2)
 from .test_time_aug import MultiScaleFlipAug3D
 # yapf: disable
 from .transforms_3d import (AffineResize, BackgroundPointsFilter,
@@ -35,4 +35,5 @@ __all__ = [
     'LoadPointsFromDict', 'MultiViewWrapper', 'RandomRotate',
     'RangeLimitedRandomCrop', 'PrepareImageInputs', 'PointToMultiViewDepth',
     'LoadOccGTFromFile', 'ToEgo', 'VelocityAug', 'LoadAnnotations', 'BEVAug',
+    'PrepareImageInputsv2','BEVAugv2'
 ]

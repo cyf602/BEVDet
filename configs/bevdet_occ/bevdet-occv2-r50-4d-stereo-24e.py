@@ -29,7 +29,13 @@ class_names = [
     'car', 'truck', 'construction_vehicle', 'bus', 'trailer', 'barrier',
     'motorcycle', 'bicycle', 'pedestrian', 'traffic_cone'
 ]
-
+# For OpenOcc v2 we have 17 classes (including `free`)
+occ_class_names = [
+    'car', 'truck', 'trailer', 'bus', 'construction_vehicle',
+    'bicycle', 'motorcycle', 'pedestrian', 'traffic_cone', 'barrier',
+    'driveable_surface', 'other_flat', 'sidewalk',
+    'terrain', 'manmade', 'vegetation', 'free'
+]
 data_config = {
     'cams': [
         'CAM_FRONT_LEFT', 'CAM_FRONT', 'CAM_FRONT_RIGHT', 'CAM_BACK_LEFT',
@@ -56,11 +62,11 @@ grid_config = {
     'depth': [1.0, 45.0, 0.5],
 }
 
-voxel_size = [0.1, 0.1, 0.2]
+# voxel_size = [0.1, 0.1, 0.2]
 
 numC_Trans = 32
 
-multi_adj_frame_id_cfg = (1, 1+1, 1)
+multi_adj_frame_id_cfg = (1, 2+1, 1)
 
 model = dict(
     type='BEVStereo4DOCC',
@@ -120,11 +126,13 @@ model = dict(
         type='CrossEntropyLoss',
         use_sigmoid=False,
         loss_weight=1.0),
+    loss_flow=dict(type='L1Loss', loss_weight=0.25),
     use_mask=True,
 )
 
 # Data
-dataset_type = 'NuScenesDatasetOccpancy'
+dataset_type = 'NuScenesDatasetOccpancyv2'
+# dataset_type = 'TemporalNuSceneOcc'
 data_root = 'data/nuscenes/'
 file_client_args = dict(backend='disk')
 
@@ -136,14 +144,15 @@ bda_aug_conf = dict(
 
 train_pipeline = [
     dict(
-        type='PrepareImageInputs',
+        type='PrepareImageInputsv2',
         is_train=True,
         data_config=data_config,
         sequential=True),
-    dict(type='LoadOccGTFromFile'),
+    dict(type='LoadOccGTFromFilev2'),
+    # dict(type='LoadTempOccGTFromFile'),
     dict(type='LoadAnnotations'),
     dict(
-        type='BEVAug',
+        type='BEVAugv2',
         bda_aug_conf=bda_aug_conf,
         classes=class_names),
     dict(
@@ -156,13 +165,13 @@ train_pipeline = [
     dict(type='DefaultFormatBundle3D', class_names=class_names),
     dict(
         type='Collect3D', keys=['img_inputs', 'gt_depth', 'voxel_semantics',
-                                'mask_lidar','mask_camera'])
+                                'voxel_flow','vismask'])
 ]
 
 test_pipeline = [
-    dict(type='PrepareImageInputs', data_config=data_config, sequential=True),
+    dict(type='PrepareImageInputsv2', data_config=data_config, sequential=True),
     dict(type='LoadAnnotations'),
-    dict(type='BEVAug',
+    dict(type='BEVAugv2',
          bda_aug_conf=bda_aug_conf,
          classes=class_names,
          is_train=False),
@@ -225,7 +234,11 @@ data = dict(
 
 for key in ['val', 'train', 'test']:
     data[key].update(share_data_config)
-
+# env_cfg = dict(
+#     cudnn_benchmark=False,
+#     mp_cfg=dict(mp_start_method='fork', opencv_num_threads=0),
+#     dist_cfg=dict(backend='nccl',timeout=10800),
+# )
 # Optimizer
 optimizer = dict(type='AdamW', lr=1e-4, weight_decay=1e-2)
 optimizer_config = dict(grad_clip=dict(max_norm=5, norm_type=2))
@@ -235,15 +248,17 @@ lr_config = dict(
     warmup_iters=200,
     warmup_ratio=0.001,
     step=[100,])
-runner = dict(type='EpochBasedRunner', max_epochs=100)
+checkpoint_config = dict(interval=1)
+evaluation = dict(interval=3, pipeline=test_pipeline)
+runner = dict(type='EpochBasedRunner', max_epochs=30)
 
-custom_hooks = [
-    dict(
-        type='MEGVIIEMAHook',
-        init_updates=10560,
-        priority='NORMAL',
-    ),
-]
-
+# custom_hooks = [
+#     dict(
+#         type='MEGVIIEMAHook',
+#         init_updates=10560,
+#         priority='NORMAL',
+#     ),
+# ]
+# resume_from="work_dirs/bevdetoccv2-917/latest.pth"
 load_from="ckpts/bevdet-r50-4d-stereo-cbgs.pth"
 # fp16 = dict(loss_scale='dynamic')
