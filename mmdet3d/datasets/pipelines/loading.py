@@ -1455,11 +1455,11 @@ class BEVAugv2(BEVAug):
             if flip_dx:#颠倒？
                 results['voxel_semantics'] = results['voxel_semantics'][::-1,...].copy()#[200,200,16]?
                 results['voxel_flow'] = results['voxel_flow'][::-1,...].copy()#
-                # results['mask_lidar'] = results['mask_lidar'][::-1,...].copy()
-                # results['mask_camera'] = results['mask_camera'][::-1,...].copy()
+                # results['voxel_flow'][...,0] = -results['voxel_flow'][...,0]
+                results['vismask']=results['vismask'][::-1,...].copy()
             if flip_dy:
                 results['voxel_semantics'] = results['voxel_semantics'][:,::-1,...].copy()
                 results['voxel_flow'] = results['voxel_flow'][:,::-1,...].copy()
-                # results['mask_lidar'] = results['mask_lidar'][:,::-1,...].copy()
-                # results['mask_camera'] = results['mask_camera'][:,::-1,...].copy()
+                # results['voxel_flow'][...,1] = -results['voxel_flow'][...,1]
+                results['vismask']=results['vismask'][:,::-1,...].copy()
         return results

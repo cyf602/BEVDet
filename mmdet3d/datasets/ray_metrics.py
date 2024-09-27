@@ -260,8 +260,8 @@ def save_results(sem_pred_list, sem_gt_list, flow_pred_list, flow_gt_list, lidar
     # dists_gt_list,dists_pr_list=[]
     pred_dicts,gt_dicts=[],[]
     for i,(sem_pred, sem_gt, flow_pred, flow_gt, lidar_origins) in tqdm(enumerate(zip(sem_pred_list, sem_gt_list, flow_pred_list, flow_gt_list, lidar_origin_list)), ncols=50):
-        if random.randint(1,100)>5:
-            continue
+        # if random.randint(1,100)>5:
+        #     continue
         sem_pred = np.reshape(sem_pred, [200, 200, 16])
         sem_gt = np.reshape(sem_gt, [200, 200, 16])
         flow_pred = np.reshape(flow_pred, [200, 200, 16, 2])
@@ -271,7 +271,7 @@ def save_results(sem_pred_list, sem_gt_list, flow_pred_list, flow_gt_list, lidar
         pred_dicts.append(pred_dict)
         gt_dicts.append(gt_dict)
     save_dict={'gt_dict':gt_dicts,'pr_dict':pred_dicts}
-    dump(save_dict,"test_results/resultckpt905_1-20.pkl")
+    dump(save_dict,"test_results/resultckpt925_epoch23.pkl")
     
 def main(sem_pred_list, sem_gt_list, flow_pred_list, flow_gt_list, lidar_origin_list):
     torch.cuda.empty_cache()
@@ -281,7 +281,7 @@ def main(sem_pred_list, sem_gt_list, flow_pred_list, flow_gt_list, lidar_origin_
     lidar_rays = torch.from_numpy(lidar_rays)
     
     pcd_pred_list, pcd_gt_list = [], []#len=len infos
-    # coors_pred_list,coors_gt_list=[],[]
+    coors_pred_list,coors_gt_list=[],[]
     for sem_pred, sem_gt, flow_pred, flow_gt, lidar_origins in tqdm(zip(sem_pred_list, sem_gt_list, flow_pred_list, flow_gt_list, lidar_origin_list), ncols=50):
         sem_pred = np.reshape(sem_pred, [200, 200, 16])
         sem_gt = np.reshape(sem_gt, [200, 200, 16])
@@ -301,11 +301,7 @@ def main(sem_pred_list, sem_gt_list, flow_pred_list, flow_gt_list, lidar_origin_
         assert pcd_pred.shape == pcd_gt.shape
         pcd_pred_list.append(pcd_pred)#N,4
         pcd_gt_list.append(pcd_gt)
-        # coors_pred_list.append(coors_pred)
-        # coors_gt_list.append(coors_gt)
-    # save_dict={'occ_gts':sem_gt_list,'flow_gts':flow_gt_list,'sem_pred':sem_pred_list,
-            #    'flow_preds':flow_pred_list,'coors_gt':coors_gt,'coors_pred':coors_pred}
-    # dump(save_dict,"test_results/resultckpt9051820.pkl")
+        
     iou_list, ave_list = calc_metrics(pcd_pred_list, pcd_gt_list)
     
     table = PrettyTable([

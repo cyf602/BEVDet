@@ -66,7 +66,7 @@ grid_config = {
 
 numC_Trans = 32
 
-multi_adj_frame_id_cfg = (1, 2+1, 1)
+multi_adj_frame_id_cfg = (1, 1+1, 1)
 
 model = dict(
     type='BEVStereo4DOCC',
@@ -144,7 +144,7 @@ bda_aug_conf = dict(
 
 train_pipeline = [
     dict(
-        type='PrepareImageInputsv2',
+        type='PrepareImageInputs',
         is_train=True,
         data_config=data_config,
         sequential=True),
@@ -169,7 +169,7 @@ train_pipeline = [
 ]
 
 test_pipeline = [
-    dict(type='PrepareImageInputsv2', data_config=data_config, sequential=True),
+    dict(type='PrepareImageInputs', data_config=data_config, sequential=True),
     dict(type='LoadAnnotations'),
     dict(type='BEVAugv2',
          bda_aug_conf=bda_aug_conf,
@@ -259,6 +259,6 @@ runner = dict(type='EpochBasedRunner', max_epochs=30)
 #         priority='NORMAL',
 #     ),
 # ]
-# resume_from="work_dirs/bevdetoccv2-917/latest.pth"
-load_from="ckpts/bevdet-r50-4d-stereo-cbgs.pth"
+resume_from="work_dirs/bevdetoccv2-vismask-926/epoch_12.pth"
+# load_from="ckpts/bevdet-r50-4d-stereo-cbgs.pth"
 # fp16 = dict(loss_scale='dynamic')

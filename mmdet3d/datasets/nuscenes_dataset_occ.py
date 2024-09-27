@@ -118,6 +118,31 @@ class NuScenesDatasetOccpancyv2(NuScenesDatasetOccpancy):#for openoccv2
     #     input_dict = super(NuScenesDatasetOccpancyv2, self).get_data_info(index)
         
     #     return input_dict
+    def get_data_info(self, index):
+        """Get data info according to the given index.
+
+        Args:
+            index (int): Index of the sample data to get.
+
+        Returns:
+            dict: Data information that will be passed to the data
+                preprocessing pipelines. It includes the following keys:
+
+                - sample_idx (str): Sample index.
+                - pts_filename (str): Filename of point clouds.
+                - sweeps (list[dict]): Infos of sweeps.
+                - timestamp (float): Sample timestamp.
+                - img_filename (str, optional): Image filename.
+                - lidar2img (list[np.ndarray], optional): Transformations
+                    from lidar to different cameras.
+                - ann_info (dict): Annotation info.
+        """
+        input_dict = super(NuScenesDatasetOccpancyv2, self).get_data_info(index)
+        # standard protocol modified from SECOND.Pytorch
+        input_dict['occ_gt_path'] = self.data_infos[index]['occ_path']
+        input_dict['occv2_gt_path'] = self.data_infos[index]['occv2_path']
+        return input_dict
+    
     def evaluate_miou(self, occ_results, runner=None, show_dir=None, **eval_kwargs):
         occ_gts = []
         flow_gts = []
@@ -162,7 +187,7 @@ class NuScenesDatasetOccpancyv2(NuScenesDatasetOccpancy):#for openoccv2
             
             data_id = sample_tokens.index(token)
             info = self.data_infos[data_id]
-
+            assert data_id==i
             occ_gt = np.load(info['occv2_path']+'/labels.npz', allow_pickle=True)
             gt_semantics = occ_gt['semantics']
             gt_flow = occ_gt['flow']

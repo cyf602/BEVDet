@@ -11,7 +11,7 @@ import numpy as np
 
 
 @DETECTORS.register_module()
-class BEVStereo4DOCC(BEVStereo4D):
+class BEVStereo4DOCCFut(BEVStereo4D):
 
     def __init__(self,
                  loss_occ=None,
@@ -24,9 +24,8 @@ class BEVStereo4DOCC(BEVStereo4D):
                  pred_occ=True,
                  pred_flow=True,
                  future_flow_loss=None,#下一帧语义损失
-                 predictor_type='mlp',
                  **kwargs):
-        super(BEVStereo4DOCC, self).__init__(**kwargs)
+        super(BEVStereo4DOCCFut, self).__init__(**kwargs)
         self.out_dim = out_dim
         out_channels = out_dim if use_predicter else num_classes
         self.occ_conv = ConvModule(
@@ -46,7 +45,6 @@ class BEVStereo4DOCC(BEVStereo4D):
                         bias=True,
                         conv_cfg=dict(type='Conv3d'))
         self.use_predicter =use_predicter
-        self.predictor_type=predictor_type
         if use_predicter:
             if pred_occ:
                 self.predicter = nn.Sequential(
@@ -54,12 +52,6 @@ class BEVStereo4DOCC(BEVStereo4D):
                     nn.Softplus(),
                     nn.Linear(self.out_dim*2, num_classes),
                 )
-                # elif predictor_type=='conv2d':
-                #     self.predicter = nn.Sequential(
-                #         nn.Linear(self.out_dim, self.out_dim*2),
-                #         nn.Softplus(),
-                #         nn.Linear(self.out_dim*2, num_classes),
-                #     )
             if pred_flow:
                 self.flow_predicter = nn.Sequential(
                     nn.Linear(self.out_dim, self.out_dim*2),
@@ -238,7 +230,7 @@ class BEVStereo4DOCC(BEVStereo4D):
         assert voxel_semantics.min() >= 0 and voxel_semantics.max() <= 17
         loss_occ = self.loss_single(voxel_semantics, occ_pred,voxel_flow,flow_pred,mask_camera=vismask)
         losses.update(loss_occ)
-        if self.vis_idx%100==10 and self.show_dir is not None and flow_pred.device == torch.device('cuda:0'):
+        if self.vis_idx%1==0 and self.show_dir is not None and flow_pred.device == torch.device('cuda:0'):
             B,H,W,Z,nc=occ_pred.shape
             occ_pred=occ_pred.detach().clone()
             occ_pred=occ_pred.view(-1,self.num_classes).argmax(dim=-1)

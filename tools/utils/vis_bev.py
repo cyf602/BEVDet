@@ -27,6 +27,7 @@ colors_map=np.array([
         ], dtype=np.uint8)[:, :3]
 V_MAX_THR=-1
 def vis_occ(semantics, flows,use_minv_thr=True,v_max_thr=-1):
+    global V_MAX_THR
     H, W, D = semantics.shape
     semantics_valid=(semantics!=16)#0~16类别号
     # semantics_valid = np.logical_not(semantics == 0)#
@@ -48,8 +49,8 @@ def vis_occ(semantics, flows,use_minv_thr=True,v_max_thr=-1):
     # print("occ_bev_torch: ", occ_bev_torch.shape)
     # flow_occ_bev_x=torch.gather(flows[...,0], dim=2,index=selected.unsqueeze(-1)).cpu().numpy()
     # flow_occ_bev_y=torch.gather(flows[...,1], dim=2,index=selected.unsqueeze(-1)).cpu().numpy()
-    flow_occ_bev_x=torch.max(flows[...,0],dim=2).values.unsqueeze(-1).cpu().numpy()
-    flow_occ_bev_y=torch.max(flows[...,1],dim=2).values.unsqueeze(-1).cpu().numpy()
+    flow_occ_bev_x=torch.max(torch.abs(flows[...,0]),dim=2).values.unsqueeze(-1).cpu().numpy()
+    flow_occ_bev_y=torch.max(torch.abs(flows[...,1]),dim=2).values.unsqueeze(-1).cpu().numpy()
     flow_occ_bev_v=np.sqrt(flow_occ_bev_x**2+flow_occ_bev_y**2)
     occ_bev = sem_occ_bev_torch.cpu().numpy()#[B,200,200,1]
     if v_max_thr>0:
@@ -103,6 +104,7 @@ def vis_bev_view(occ_preds,occ_gts,flow_preds,flow_gts,idx,save_root='/root/data
     occ_preds/occ_gts:[B,200,200,16] int
     low_preds/flow_gts:[B,200,200,16,2]
     """
+    global V_MAX_THR
     V_MAX_THR=-1
     bs=occ_gts.shape[0]
     # v_max_thr=torch.max(flow_gts).item()
