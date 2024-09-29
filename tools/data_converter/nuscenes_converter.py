@@ -163,7 +163,7 @@ def _fill_trainval_infos(nusc,
     """
     train_nusc_infos = []
     val_nusc_infos = []
-
+    non_exist_files=[]
     for sample in mmcv.track_iter_progress(nusc.sample):
         lidar_token = sample['data']['LIDAR_TOP']
         sd_rec = nusc.get('sample_data', sample['data']['LIDAR_TOP'])
@@ -173,7 +173,7 @@ def _fill_trainval_infos(nusc,
         lidar_path, boxes, _ = nusc.get_sample_data(lidar_token)
 
         mmcv.check_file_exist(lidar_path)
-
+        
         info = {
             'lidar_path': lidar_path,
             'token': sample['token'],
@@ -209,7 +209,8 @@ def _fill_trainval_infos(nusc,
                                          e2g_t, e2g_r_mat, cam)
             cam_info.update(cam_intrinsic=cam_intrinsic)
             info['cams'].update({cam: cam_info})
-
+            if not os.path.exists(cam_path):
+                print("no camera file:",cam_path)
         # obtain sweeps for a single key-frame
         sd_rec = nusc.get('sample_data', sample['data']['LIDAR_TOP'])
         sweeps = []

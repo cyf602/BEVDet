@@ -1,7 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import pickle
 from os import path as osp
-
+import os
 import mmcv
 import numpy as np
 from mmcv import track_iter_progress
@@ -185,6 +185,13 @@ def create_groundtruth_database(dataset_class_name,
     group_counter = 0
     for j in track_iter_progress(list(range(len(dataset)))):
         input_dict = dataset.get_data_info(j)
+        non_file=False
+        for sweep in input_dict['sweeps']:
+            if not os.path.exists(sweep['data_path']):
+                print("no data file:",sweep['data_path'])
+            non_file=True
+        if non_file:
+            continue
         dataset.pre_pipeline(input_dict)
         example = dataset.pipeline(input_dict)
         annos = dict(

@@ -9,6 +9,7 @@ from .lyft_dataset import LyftDataset
 from .nuscenes_dataset import NuScenesDataset
 from .nuscenes_mono_dataset import NuScenesMonoDataset
 from .nuscenes_dataset_occ import NuScenesDatasetOccpancy
+from .multinuscenes_dataset import MulNuScenesDataset
 # yapf: disable
 from .pipelines import (AffineResize, BackgroundPointsFilter, GlobalAlignment,
                         GlobalRotScaleTrans, IndoorPatchPointSample,

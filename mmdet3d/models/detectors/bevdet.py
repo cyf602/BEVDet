@@ -324,7 +324,7 @@ class BEVDet4D(BEVDet):
 
         # add bev data augmentation
         bda_ = torch.zeros((n, 1, 4, 4), dtype=grid.dtype).to(grid)
-        bda_[:, :, :3, :3] = bda.unsqueeze(1)
+        bda_[:, :, :, :] = bda.unsqueeze(1)
         bda_[:, :, 3, 3] = 1
         c02l0 = bda_.matmul(c02l0)
         if bda_adj is not None:
@@ -641,7 +641,8 @@ class BEVStereo4D(BEVDepth4D):
                          **kwargs):
         if sequential:
             # Todo
-            assert False
+            # assert False
+            pass
         imgs, sensor2keyegos, ego2globals, intrins, post_rots, post_trans, \
         bda, curr2adjsensor = self.prepare_inputs(img, stereo=True)
         """Extract features of images."""
@@ -677,7 +678,8 @@ class BEVStereo4D(BEVDepth4D):
                 feat_prev_iv = feat_curr_iv
         if pred_prev:
             # Todo
-            assert False
+            # assert False
+            pass
         if not self.with_prev:
             bev_feat_key = bev_feat_list[0]
             if len(bev_feat_key.shape) ==4:
