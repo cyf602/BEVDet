@@ -279,7 +279,7 @@ test_data_config = dict(
     ann_file=data_root + 'bevdetv3-nuscenes_infos_val.pkl')
 
 data = dict(
-    samples_per_gpu=8,
+    samples_per_gpu=1,
     workers_per_gpu=4,
     train=dict(
         type='CBGSDataset',
@@ -310,13 +310,14 @@ lr_config = dict(
     warmup_ratio=0.001,
     step=[20,])
 runner = dict(type='EpochBasedRunner', max_epochs=20)
+evaluation = dict(interval=1, pipeline=test_pipeline)
 
 custom_hooks = [
-    dict(
-        type='MEGVIIEMAHook',
-        init_updates=10560,
-        priority='NORMAL',
-    ),
+    # dict(
+    #     type='MEGVIIEMAHook',
+    #     init_updates=10560,
+    #     priority='NORMAL',
+    # ),
     dict(
         type='SequentialControlHook',
         temporal_start_epoch=2,

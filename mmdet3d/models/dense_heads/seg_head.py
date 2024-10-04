@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from torchvision.models.resnet import resnet18
-from ..builder import HEADS
+from ..builder import HEADS, build_loss
 
 class Up(nn.Module):
     def __init__(self, in_channels, out_channels, scale_factor=2):
@@ -27,7 +27,7 @@ class Up(nn.Module):
 
 @HEADS.register_module()
 class SegEncode(nn.Module):
-    def __init__(self, inC, outC):
+    def __init__(self, inC, outC,loss_seg):
         super(SegEncode, self).__init__()
         trunk = resnet18(pretrained=False, zero_init_residual=True)
         self.conv1 = nn.Conv2d(inC, 64, kernel_size=7, stride=2, padding=3, bias=False)
@@ -46,6 +46,8 @@ class SegEncode(nn.Module):
             nn.ReLU(inplace=True),
             nn.Conv2d(128, outC, kernel_size=1, padding=0),
         )
+        self.loss_seg = build_loss(loss_seg)
+        
 
     def forward(self, x): #torch.Size([2, 256, 200, 400])
         x = self.conv1(x) #torch.Size([2, 64, 200, 400])
@@ -60,6 +62,14 @@ class SegEncode(nn.Module):
         x = self.up2(x) #torch.Size([2, 4, 200, 400]) 语义分割预测特征图
 
         return x
+    
+    # @force_fp32(apply_to=('preds_dicts'))
+    def segloss(self, semantic_gt, seg_preds):
+        loss_dict = dict()
+        seg_loss = self.loss_seg(seg_preds, semantic_gt)
+        loss_dict['loss_seg'] = seg_loss
+        return loss_dict
+        
 
 @HEADS.register_module()
 class SegEncode_v1(nn.Module):

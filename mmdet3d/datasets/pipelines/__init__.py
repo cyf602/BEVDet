@@ -20,6 +20,7 @@ from .transforms_3d import (AffineResize, BackgroundPointsFilter,
                             RandomJitterPoints, RandomRotate, RandomShiftScale,
                             RangeLimitedRandomCrop, ToEgo, VelocityAug,
                             VoxelBasedPointSampler)
+from .rasterize import RasterizeMapVectors
 
 __all__ = [
     'ObjectSample', 'RandomFlip3D', 'ObjectNoise', 'GlobalRotScaleTrans',
@@ -34,5 +35,5 @@ __all__ = [
     'RandomJitterPoints', 'AffineResize', 'RandomShiftScale',
     'LoadPointsFromDict', 'MultiViewWrapper', 'RandomRotate',
     'RangeLimitedRandomCrop', 'PrepareImageInputs', 'PointToMultiViewDepth',
-    'LoadOccGTFromFile', 'ToEgo', 'VelocityAug', 'LoadAnnotations', 'BEVAug',
+    'LoadOccGTFromFile', 'ToEgo', 'VelocityAug', 'LoadAnnotations', 'BEVAug','RasterizeMapVectors'
 ]

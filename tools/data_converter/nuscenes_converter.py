@@ -265,7 +265,7 @@ def _fill_trainval_infos(nusc,
             info['num_radar_pts'] = np.array(
                 [a['num_radar_pts'] for a in annotations])
             info['valid_flag'] = valid_flag
-
+        info['location']=nusc.get('log', nusc.get('scene', sample['scene_token'])['log_token'])['location']
         if sample['scene_token'] in train_scenes:
             train_nusc_infos.append(info)
         else:

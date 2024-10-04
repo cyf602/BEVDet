@@ -41,7 +41,7 @@ def parse_args():
         action='store_true',
         help='resume from the latest checkpoint automatically')
     parser.add_argument(
-        '--validate',
+        '--no_validate',
         action='store_true',
         help='whether not to evaluate the checkpoint during training')
     group_gpus = parser.add_mutually_exclusive_group()
@@ -268,7 +268,7 @@ def main():
         datasets,
         cfg,
         distributed=distributed,
-        validate=args.validate,
+        validate=(not args.no_validate),
         timestamp=timestamp,
         meta=meta)
 

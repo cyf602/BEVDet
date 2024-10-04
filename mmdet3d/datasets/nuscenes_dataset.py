@@ -12,7 +12,8 @@ from ..core.bbox import Box3DMode, Coord3DMode, LiDARInstance3DBoxes
 from .builder import DATASETS
 from .custom_3d import Custom3DDataset
 from .pipelines import Compose
-
+from .map_utils import VectorizedLocalMap
+from nuscenes import NuScenes
 
 @DATASETS.register_module()
 class NuScenesDataset(Custom3DDataset):
@@ -139,6 +140,7 @@ class NuScenesDataset(Custom3DDataset):
                  img_info_prototype='mmcv',
                  multi_adj_frame_id_cfg=None,
                  ego_cam='CAM_FRONT',
+                 grid_conf=None,
                  stereo=False):
         self.load_interval = load_interval
         self.use_valid_flag = use_valid_flag
@@ -169,6 +171,21 @@ class NuScenesDataset(Custom3DDataset):
         self.multi_adj_frame_id_cfg = multi_adj_frame_id_cfg
         self.ego_cam = ego_cam
         self.stereo = stereo
+        if grid_conf is not None:
+            self.map_dataroot = self.data_root
+            map_xbound, map_ybound = grid_conf['xbound'], grid_conf['ybound']
+            patch_h = map_ybound[1] - map_ybound[0]
+            patch_w = map_xbound[1] - map_xbound[0]
+            canvas_h = int(patch_h / map_ybound[2])
+            canvas_w = int(patch_w / map_xbound[2])
+            self.map_patch_size = (patch_h, patch_w)
+            self.map_canvas_size = (canvas_h, canvas_w)
+            self.nusc = NuScenes(version='v1.0-trainval', dataroot=self.data_root, verbose=False)
+            self.vector_map = VectorizedLocalMap(
+                dataroot=self.map_dataroot,
+                patch_size=self.map_patch_size,
+                canvas_size=self.map_canvas_size,
+            )
 
     def get_cat_ids(self, idx):
         """Get category distribution of single scene.
@@ -205,7 +222,7 @@ class NuScenesDataset(Custom3DDataset):
         """
         data = mmcv.load(ann_file, file_format='pkl')
         data_infos = list(sorted(data['infos'], key=lambda e: e['timestamp']))
-        data_infos = data_infos[::self.load_interval]
+        data_infos = data_infos[::self.load_interval]#[:150]
         self.metadata = data['metadata']
         self.version = self.metadata['version']
         return data_infos
@@ -237,6 +254,8 @@ class NuScenesDataset(Custom3DDataset):
             sweeps=info['sweeps'],
             timestamp=info['timestamp'] / 1e6,
         )
+        if hasattr(self, 'vector_map'):
+            input_dict['vectors'] = self.get_map_ann_info(info)
         if 'ann_infos' in info:
             input_dict['ann_infos'] = info['ann_infos']
         if self.modality['use_camera']:
@@ -342,6 +361,23 @@ class NuScenesDataset(Custom3DDataset):
             gt_names=gt_names_3d)
         return anns_results
 
+    def get_map_ann_info(self, info):
+
+        # get the annotations of HD maps
+        vectors = self.vector_map.gen_vectorized_samples(
+            info['location'], info['ego2global_translation'], info['ego2global_rotation'])
+
+        # type0 = 'divider'
+        # type1 = 'pedestrain'
+        # type2 = 'boundary'
+
+        for vector in vectors:
+            pts = vector['pts']
+            vector['pts'] = np.concatenate(
+                (pts, np.zeros((pts.shape[0], 1))), axis=1)
+
+        return vectors
+    
     def _format_bbox(self, results, jsonfile_prefix=None):
         """Convert the results to the standard format.
 
@@ -359,9 +395,9 @@ class NuScenesDataset(Custom3DDataset):
 
         print('Start to convert detection format...')
         for sample_id, det in enumerate(mmcv.track_iter_progress(results)):
-            boxes = det['boxes_3d'].tensor.numpy()
-            scores = det['scores_3d'].numpy()
-            labels = det['labels_3d'].numpy()
+            boxes = det[0]['pts_bbox']['boxes_3d'].tensor.numpy()#det['boxes_3d'].tensor.numpy()
+            scores = det[0]['pts_bbox']['scores_3d'].numpy()
+            labels = det[0]['pts_bbox']['labels_3d'].numpy()
             sample_token = self.data_infos[sample_id]['token']
 
             trans = self.data_infos[sample_id]['cams'][

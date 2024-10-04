@@ -15,7 +15,7 @@ import mmdet
 from mmdet3d.apis import single_gpu_test
 from mmdet3d.datasets import build_dataloader, build_dataset
 from mmdet3d.models import build_model
-from mmdet.apis import multi_gpu_test, set_random_seed
+from mmdet3d.apis.test import multi_gpu_test, set_random_seed
 from mmdet.datasets import replace_ImageToTensor
 
 if mmdet.__version__ > '2.23.0':

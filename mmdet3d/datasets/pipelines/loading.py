@@ -1267,4 +1267,9 @@ class BEVAug(object):
                 results['voxel_semantics'] = results['voxel_semantics'][:,::-1,...].copy()
                 results['mask_lidar'] = results['mask_lidar'][:,::-1,...].copy()
                 results['mask_camera'] = results['mask_camera'][:,::-1,...].copy()
+        if 'semantic_indices' in results:
+            if flip_dx:#[y,x][200,400]
+                results['semantic_indices']=torch.flip(results['semantic_indices'],dims=[1])
+            if flip_dy:
+                results['semantic_indices']=torch.flip(results['semantic_indices'],dims=[0])
         return results

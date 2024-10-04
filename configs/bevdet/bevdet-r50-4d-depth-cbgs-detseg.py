@@ -81,7 +81,12 @@ grid_config = {
     'z': [-5, 3, 8],
     'depth': [1.0, 60.0, 0.5],
 }
-
+map_grid_conf = {
+    'xbound': [-30.0, 30.0, 0.15],
+    'ybound': [-15.0, 15.0, 0.15],
+    'zbound': [-5.0,3.0,8.0],#[-10.0, 10.0, 20.0],
+    'dbound': [1.0, 60.0, 0.5],
+}
 voxel_size = [0.1, 0.1, 0.2]
 
 numC_Trans = 80
@@ -89,9 +94,12 @@ numC_Trans = 80
 multi_adj_frame_id_cfg = (1, 1+1, 1)
 
 model = dict(
-    type='BEVDepth4D',
+    type='BEVDepth4D_Multitask',
     align_after_view_transfromation=False,
     num_adj=len(range(*multi_adj_frame_id_cfg)),
+    map_grid_conf=map_grid_conf,
+    pred_det=True,
+    pred_seg=True,
     img_backbone=dict(
         pretrained='torchvision://resnet50',
         type='ResNet',
@@ -134,8 +142,24 @@ model = dict(
         stride=[1,],
         backbone_output_ids=[0,]),
     pts_bbox_head=dict(
-        type='CenterHead',
+        type='CenterHeadDetSeg',
+        grid_config=grid_config,
+        map_grid_conf=map_grid_conf,
         in_channels=256,
+        loss_seg=dict(
+                type='CrossEntropyLoss',
+                use_sigmoid=False,
+                loss_weight=3.0,
+                class_weight=[0.3, 2.0, 2.0, 2.0]),
+        seg_dncoder=dict(
+            type='SegEncode',
+            inC=256,
+            outC=4,
+            loss_seg=dict(#
+                type='CrossEntropyLoss',
+                use_sigmoid=False,
+                loss_weight=3.0,
+                class_weight=[0.3, 2.0, 2.0, 2.0]),),
         tasks=[
             dict(num_class=10, class_names=['car', 'truck',
                                             'construction_vehicle',
@@ -161,6 +185,15 @@ model = dict(
         loss_cls=dict(type='GaussianFocalLoss', reduction='mean', loss_weight=6.),
         loss_bbox=dict(type='L1Loss', reduction='mean', loss_weight=1.5),
         norm_bbox=True),
+    seg_head=dict(
+            type='SegEncode',
+            inC=256,
+            outC=4,
+            loss_seg=dict(
+                type='CrossEntropyLoss',
+                use_sigmoid=False,
+                loss_weight=3.0,
+                class_weight=[0.3, 2.0, 2.0, 2.0]),),
     # model training and testing settings
     train_cfg=dict(
         pts=dict(
@@ -213,6 +246,7 @@ train_pipeline = [
         data_config=data_config,
         sequential=True),
     dict(type='LoadAnnotations'),
+    dict(type='RasterizeMapVectors', map_grid_conf=map_grid_conf),
     dict(
         type='BEVAug',
         bda_aug_conf=bda_aug_conf,
@@ -229,11 +263,12 @@ train_pipeline = [
     dict(type='DefaultFormatBundle3D', class_names=class_names),
     dict(
         type='Collect3D', keys=['img_inputs', 'gt_bboxes_3d', 'gt_labels_3d',
-                                'gt_depth'])
+                                'gt_depth','semantic_indices'])
 ]
 
 test_pipeline = [
     dict(type='PrepareImageInputs', data_config=data_config, sequential=True),
+    dict(type='RasterizeMapVectors', map_grid_conf=map_grid_conf),
     dict(type='LoadAnnotations'),
     dict(type='BEVAug',
          bda_aug_conf=bda_aug_conf,
@@ -255,7 +290,7 @@ test_pipeline = [
                 type='DefaultFormatBundle3D',
                 class_names=class_names,
                 with_label=False),
-            dict(type='Collect3D', keys=['points', 'img_inputs'])
+            dict(type='Collect3D', keys=['points', 'img_inputs','semantic_indices'])
         ])
 ]
 
@@ -276,10 +311,13 @@ share_data_config = dict(
 
 test_data_config = dict(
     pipeline=test_pipeline,
-    ann_file=data_root + 'bevdetv3-nuscenes_infos_val.pkl')
+    data_root=data_root,    
+    ann_file=data_root + 'bevdetv3-nuscenes_infos_val.pkl',
+    grid_conf=map_grid_conf,
+    )
 
 data = dict(
-    samples_per_gpu=8,
+    samples_per_gpu=4,
     workers_per_gpu=4,
     train=dict(
         type='CBGSDataset',
@@ -290,6 +328,7 @@ data = dict(
         classes=class_names,
         test_mode=False,
         use_valid_flag=True,
+        grid_conf=map_grid_conf,
         # we use box_type_3d='LiDAR' in kitti and nuscenes dataset
         # and box_type_3d='Depth' in sunrgbd and scannet dataset.
         box_type_3d='LiDAR')),
@@ -310,17 +349,18 @@ lr_config = dict(
     warmup_ratio=0.001,
     step=[20,])
 runner = dict(type='EpochBasedRunner', max_epochs=20)
+evaluation = dict(interval=1, pipeline=test_pipeline)
 
 custom_hooks = [
-    dict(
-        type='MEGVIIEMAHook',
-        init_updates=10560,
-        priority='NORMAL',
-    ),
+    # dict(
+    #     type='MEGVIIEMAHook',
+    #     init_updates=10560,
+    #     priority='NORMAL',
+    # ),
     dict(
         type='SequentialControlHook',
         temporal_start_epoch=2,
     ),
 ]
-
+find_unused_parameters=False
 # fp16 = dict(loss_scale='dynamic')

@@ -2,7 +2,7 @@ import torch
 import numpy as np
 
 from mmdet.datasets.builder import PIPELINES
-from ..utils import preprocess_map
+from .map_utils import preprocess_map
 
 import warnings
 warnings.filterwarnings('ignore')

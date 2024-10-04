@@ -10,6 +10,7 @@ from mmcv.runner import (HOOKS, DistSamplerSeedHook, EpochBasedRunner,
                          build_runner, get_dist_info)
 from mmcv.utils import build_from_cfg
 from torch import distributed as dist
+from mmdet3d.core.evaluation.eval_hooks import CustomDistEvalHook
 
 from mmdet3d.datasets import build_dataset
 from mmdet3d.utils import find_latest_checkpoint
@@ -299,7 +300,8 @@ def train_detector(model,
             shuffle=False)
         eval_cfg = cfg.get('evaluation', {})
         eval_cfg['by_epoch'] = cfg.runner['type'] != 'IterBasedRunner'
-        eval_hook = MMDET_DistEvalHook if distributed else MMDET_EvalHook
+        eval_hook = CustomDistEvalHook if distributed else MMDET_EvalHook
+        # eval_hook = MMDET_DistEvalHook if distributed else MMDET_EvalHook
         # In this PR (https://github.com/open-mmlab/mmcv/pull/1193), the
         # priority of IterTimerHook has been modified from 'NORMAL' to 'LOW'.
         runner.register_hook(

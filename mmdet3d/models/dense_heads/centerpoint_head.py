@@ -13,7 +13,7 @@ from mmdet3d.models import builder
 from mmdet3d.models.utils import clip_sigmoid
 from mmdet.core import build_bbox_coder, multi_apply, reduce_mean
 from ..builder import HEADS, build_loss
-
+import torch.nn.functional as F
 
 @HEADS.register_module()
 class SeparateHead(BaseModule):
@@ -854,3 +854,185 @@ class CenterHead(BaseModule):
 
             predictions_dicts.append(predictions_dict)
         return predictions_dicts
+    
+@HEADS.register_module()
+class CenterHeadDetSeg(CenterHead):
+    def __init__(self,seg_dncoder,grid_config,map_grid_conf,loss_seg,**kwargs):
+        super(CenterHeadDetSeg, self).__init__(**kwargs)
+        self.seg_decoder = builder.build_head(seg_dncoder)
+        self.feat_cropper = BevFeatureSlicer(grid_config, map_grid_conf)    
+        self.segloss=build_loss(loss_seg)
+    
+    def forward_single(self, x):
+        """Forward function for CenterPoint.
+
+        Args:
+            x (torch.Tensor): Input feature map with the shape of
+                [B, 512, 128, 128].
+
+        Returns:
+            list[dict]: Output results for tasks.
+        """
+        ret_dicts = []
+        seg_bev = self.feat_cropper(x)#[B,256,?150->200,150->400]    
+        seg_res=self.seg_decoder(seg_bev)
+        
+        x = self.shared_conv(x)
+        for task in self.task_heads:#l=1
+            ret_dicts.append(task(x))
+        ret_dicts[0]['seg_pred']=seg_res
+        return ret_dicts
+
+    def loss(self, gt_bboxes_3d, gt_labels_3d, preds_dicts, semantic_indices,**kwargs):
+        """Loss function for CenterHead.
+
+        Args:
+            gt_bboxes_3d (list[:obj:`LiDARInstance3DBoxes`]): Ground
+                truth gt boxes.
+            gt_labels_3d (list[torch.Tensor]): Labels of boxes.
+            preds_dicts (dict): Output of forward function.
+
+        Returns:
+            dict[str:torch.Tensor]: Loss of heatmap and bbox of each task.
+        """
+        heatmaps, anno_boxes, inds, masks = self.get_targets(
+            gt_bboxes_3d, gt_labels_3d)
+        loss_dict = dict()
+        if not self.task_specific:
+            loss_dict['loss'] = 0
+        for task_id, preds_dict in enumerate(preds_dicts):
+            # heatmap focal loss
+            preds_dict[0]['heatmap'] = clip_sigmoid(preds_dict[0]['heatmap'])
+            num_pos = heatmaps[task_id].eq(1).float().sum().item()
+            cls_avg_factor = torch.clamp(
+                reduce_mean(heatmaps[task_id].new_tensor(num_pos)),
+                min=1).item()
+            loss_heatmap = self.loss_cls(
+                preds_dict[0]['heatmap'],
+                heatmaps[task_id],
+                avg_factor=cls_avg_factor)
+            target_box = anno_boxes[task_id]
+            # reconstruct the anno_box from multiple reg heads
+            preds_dict[0]['anno_box'] = torch.cat(
+                (
+                    preds_dict[0]['reg'],
+                    preds_dict[0]['height'],
+                    preds_dict[0]['dim'],
+                    preds_dict[0]['rot'],
+                    preds_dict[0]['vel'],
+                ),
+                dim=1,
+            )
+
+            # Regression loss for dimension, offset, height, rotation
+            num = masks[task_id].float().sum()
+            ind = inds[task_id]
+            pred = preds_dict[0]['anno_box'].permute(0, 2, 3, 1).contiguous()
+            pred = pred.view(pred.size(0), -1, pred.size(3))
+            pred = self._gather_feat(pred, ind)
+            mask = masks[task_id].unsqueeze(2).expand_as(target_box).float()
+            num = torch.clamp(
+                reduce_mean(target_box.new_tensor(num)), min=1e-4).item()
+            isnotnan = (~torch.isnan(target_box)).float()
+            mask *= isnotnan
+            code_weights = self.train_cfg['code_weights']
+            bbox_weights = mask * mask.new_tensor(code_weights)
+            if self.task_specific:
+                name_list = ['xy', 'z', 'whl', 'yaw', 'vel']
+                clip_index = [0, 2, 3, 6, 8, 10]
+                for reg_task_id in range(len(name_list)):
+                    pred_tmp = pred[
+                        ...,
+                        clip_index[reg_task_id]:clip_index[reg_task_id + 1]]
+                    target_box_tmp = target_box[
+                        ...,
+                        clip_index[reg_task_id]:clip_index[reg_task_id + 1]]
+                    bbox_weights_tmp = bbox_weights[
+                        ...,
+                        clip_index[reg_task_id]:clip_index[reg_task_id + 1]]
+                    loss_bbox_tmp = self.loss_bbox(
+                        pred_tmp,
+                        target_box_tmp,
+                        bbox_weights_tmp,
+                        avg_factor=(num + 1e-4))
+                    loss_dict[f'task{task_id}.loss_%s' %
+                              (name_list[reg_task_id])] = loss_bbox_tmp
+                loss_dict[f'task{task_id}.loss_heatmap'] = loss_heatmap
+            else:
+                loss_bbox = self.loss_bbox(
+                    pred, target_box, bbox_weights, avg_factor=num)
+                loss_dict['loss'] += loss_bbox
+                loss_dict['loss'] += loss_heatmap
+        loss_seg=self.segloss(preds_dicts[0][0]['seg_pred'],semantic_indices)
+        loss_dict['segloss']=loss_seg
+        return loss_dict
+
+def calculate_birds_eye_view_parameters(x_bounds, y_bounds, z_bounds):
+    """
+    Parameters
+    ----------
+        x_bounds: Forward direction in the ego-car.
+        y_bounds: Sides
+        z_bounds: Height
+
+    Returns
+    -------
+        bev_resolution: Bird's-eye view bev_resolution
+        bev_start_position Bird's-eye view first element
+        bev_dimension Bird's-eye view tensor spatial dimension
+    """
+    bev_resolution = torch.tensor(
+        [row[2] for row in [x_bounds, y_bounds, z_bounds]])
+    bev_start_position = torch.tensor(
+        [row[0] + row[2] / 2.0 for row in [x_bounds, y_bounds, z_bounds]])
+    bev_dimension = torch.tensor([(row[1] - row[0]) / row[2]
+                                 for row in [x_bounds, y_bounds, z_bounds]], dtype=torch.long)
+
+    return bev_resolution, bev_start_position, bev_dimension
+class BevFeatureSlicer(nn.Module):
+    # crop the interested area in BEV feature for semantic map segmentation
+    def __init__(self, grid_conf, map_grid_conf):
+        super().__init__()
+
+        if grid_conf == map_grid_conf:
+            self.identity_mapping = True
+        else:
+            self.identity_mapping = False
+
+            bev_resolution, bev_start_position, bev_dimension = calculate_birds_eye_view_parameters(
+                grid_conf['x'], grid_conf['y'], grid_conf['z'],
+            )
+
+            map_bev_resolution, map_bev_start_position, map_bev_dimension = calculate_birds_eye_view_parameters(
+                map_grid_conf['xbound'], map_grid_conf['ybound'], map_grid_conf['zbound'],
+            )
+
+            self.map_x = torch.arange(
+                map_bev_start_position[0], map_grid_conf['xbound'][1], map_bev_resolution[0])
+
+            self.map_y = torch.arange(
+                map_bev_start_position[1], map_grid_conf['ybound'][1], map_bev_resolution[1])
+
+            # convert to normalized coords
+            self.norm_map_x = self.map_x / (- bev_start_position[0])
+            self.norm_map_y = self.map_y / (- bev_start_position[1])
+            # vision 1 失败
+            self.map_grid = torch.stack(torch.meshgrid(
+                self.norm_map_x, self.norm_map_y), dim=2).permute(1, 0, 2)
+            # self.map_grid = torch.stack(torch.meshgrid(
+            #     self.norm_map_x, self.norm_map_y, indexing='xy'), dim=2)
+
+             # vision 2 test
+            # self.map_grid = torch.stack(torch.meshgrid(
+            #     self.norm_map_x, self.norm_map_y), dim=2)
+
+    def forward(self, x):
+        # x: bev feature map tensor of shape (b, c, h, w)
+        if self.identity_mapping:
+            return x
+        else:
+            grid = self.map_grid.unsqueeze(0).type_as(
+                x).repeat(x.shape[0], 1, 1, 1)
+
+            return F.grid_sample(x, grid=grid, mode='bilinear', align_corners=True)
+    
