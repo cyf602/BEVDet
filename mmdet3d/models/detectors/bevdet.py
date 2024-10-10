@@ -2,6 +2,7 @@
 import torch
 import torch.nn.functional as F
 from mmcv.runner import force_fp32
+from mmdet3d.models.backbones.flash_intern_image import FlashInternImage
 
 from mmdet3d.ops.bev_pool_v2.bev_pool import TRTBEVPoolv2
 from mmdet.models import DETECTORS
@@ -9,7 +10,7 @@ from .. import builder
 from .centerpoint import CenterPoint
 from mmdet3d.models.utils.grid_mask import GridMask
 from mmdet.models.backbones.resnet import ResNet
-
+from mmdet3d.models.backbones.internimage import InternImage
 
 @DETECTORS.register_module()
 class BEVDet(CenterPoint):
@@ -61,8 +62,8 @@ class BEVDet(CenterPoint):
 
     @force_fp32()
     def bev_encoder(self, x):
-        x = self.img_bev_encoder_backbone(x)
-        x = self.img_bev_encoder_neck(x)
+        x = self.img_bev_encoder_backbone(x)#[B,c(64),16,200,200]
+        x = self.img_bev_encoder_neck(x)#[B,C(32),D,200,200]
         if type(x) in [list, tuple]:
             x = x[0]
         return x
@@ -595,6 +596,23 @@ class BEVStereo4D(BEVDepth4D):
                 res_layer = getattr(self.img_backbone, layer_name)
                 x = res_layer(x)
                 return x
+        elif isinstance(self.img_backbone,InternImage):
+            x = self.img_backbone.patch_embed(x)
+            x = self.img_backbone.pos_drop(x)
+            for i,level in enumerate(self.img_backbone.levels):
+                x, x_ = level(x, return_wo_downsample=True)
+                return x_.permute(0, 3, 1, 2).contiguous()
+        elif isinstance(self.img_backbone,FlashInternImage):
+            x = self.img_backbone.patch_embed(x)
+            N, H, W, C = x.shape
+            x = x.view(N, H*W, C)
+            shape=(H, W)
+            for level_idx, level in enumerate(self.img_backbone.levels):
+                old_shape = shape
+                x, x_ , shape = level(x, return_wo_downsample=True, shape=shape, level_idx=level_idx)   
+                # if level_idx in self.out_indices:
+                h, w= old_shape
+                return x_.reshape(N, h, w, -1).permute(0, 3, 1, 2)
         else:
             x = self.img_backbone.patch_embed(x)
             hw_shape = (self.img_backbone.patch_embed.DH,

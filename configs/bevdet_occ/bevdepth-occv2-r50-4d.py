@@ -56,12 +56,12 @@ data_config = {
 
 # Model
 grid_config = {
-    'x': [-40, 40, 0.4],
-    'y': [-40, 40, 0.4],
-    'z': [-1, 5.4, 0.4],
-    'depth': [1.0, 45.0, 0.5],
+    'x': [-40, 40, 0.2],
+    'y': [-40, 40, 0.2],
+    'z': [-1, 5.4, 0.2],
+    'depth': [1.0, 45.0, 0.5],#0.25->10g/bs
 }
-
+occupancy_size=[200,200,16]
 # voxel_size = [0.1, 0.1, 0.2]
 
 numC_Trans = 32
@@ -69,7 +69,7 @@ numC_Trans = 32
 multi_adj_frame_id_cfg = (1, 1+1, 1)
 
 model = dict(
-    type='BEVStereo4DOCC',
+    type='BEVDepth4DOCC',
     align_after_view_transfromation=False,
     num_adj=len(range(*multi_adj_frame_id_cfg)),
     num_extraconv2d=0,#conv2d nums in head
@@ -81,7 +81,7 @@ model = dict(
         type='ResNet',
         depth=101,
         num_stages=4,
-        out_indices=(0,2, 3),
+        out_indices=(1,2, 3),#需同时更改fpn inchannel;lss downsample
         frozen_stages=-1,
         norm_cfg=dict(type='BN', requires_grad=True),
         norm_eval=False,
@@ -89,7 +89,7 @@ model = dict(
         style='pytorch'),
     img_neck=dict(
         type='CustomFPN',
-        in_channels=[1024, 2048],
+        in_channels=[512,1024, 2048],
         out_channels=256,
         num_outs=1,
         start_level=0,
@@ -134,26 +134,21 @@ model = dict(
     #     start_level=0,
     #     out_ids=[0]),
     img_view_transformer=dict(
-        type='LSSViewTransformerBEVStereo',
+        type='LSSViewTransformerBEVDepth',
         grid_config=grid_config,
         input_size=data_config['input_size'],
         in_channels=256,
         out_channels=numC_Trans,
-        sid=False,
         collapse_z=False,
-        loss_depth_weight=0.05,
-        depthnet_cfg=dict(use_dcn=False,
-                          aspp_mid_channels=96,
-                          stereo=True,
-                          bias=5.),
-        downsample=16),
+        depthnet_cfg=dict(use_dcn=False, aspp_mid_channels=96),
+        downsample=8),
     img_bev_encoder_backbone=dict(
         type='CustomResNet3D',
-        numC_input=numC_Trans * (len(range(*multi_adj_frame_id_cfg))+1),
-        num_layer=[1, 2, 4],
+        numC_input=numC_Trans * (len(range(*multi_adj_frame_id_cfg))+2),
+        num_layer=[1, 2, 2, 4],
         with_cp=False,
         num_channels=[numC_Trans,numC_Trans*2,numC_Trans*4],
-        stride=[1,2,2],
+        stride=[2, 1,2,2],
         backbone_output_ids=[0,1,2]),
     img_bev_encoder_neck=dict(type='LSSFPN3D',
                               in_channels=numC_Trans*7,
@@ -169,14 +164,19 @@ model = dict(
         num_channels=[numC_Trans,],
         stride=[1,],
         backbone_output_ids=[0,]),
+    # loss_occ=dict(
+    #     type='CrossEntropyLoss',
+    #     use_sigmoid=False,
+    #     loss_weight=1.0),#class_weight=[0.3, 2.0, 2.0, 2.0]
     loss_occ=dict(
-        type='CrossEntropyLoss',
-        use_sigmoid=False,
-        loss_weight=1.0),
+            type='FocalLoss',
+            use_sigmoid=True,
+            gamma=2.0,
+            alpha=0.25,
+            loss_weight=10.0),
     loss_flow=dict(type='L1Loss', loss_weight=0.25),
     use_mask=True,
 )
-
 # Data
 dataset_type = 'NuScenesDatasetOccpancyv2'
 # dataset_type = 'TemporalNuSceneOcc'
@@ -186,8 +186,8 @@ file_client_args = dict(backend='disk')
 bda_aug_conf = dict(
     rot_lim=(-0., 0.),
     scale_lim=(1., 1.),
-    flip_dx_ratio=0,
-    flip_dy_ratio=0)
+    flip_dx_ratio=0.5,
+    flip_dy_ratio=0.5)
 
 train_pipeline = [
     dict(
@@ -294,7 +294,7 @@ lr_config = dict(
     warmup='linear',
     warmup_iters=200,
     warmup_ratio=0.001,
-    step=[22,27])
+    step=[100,])
 checkpoint_config = dict(interval=1)
 evaluation = dict(interval=3, pipeline=test_pipeline)
 runner = dict(type='EpochBasedRunner', max_epochs=30)
@@ -306,6 +306,6 @@ runner = dict(type='EpochBasedRunner', max_epochs=30)
 #         priority='NORMAL',
 #     ),
 # ]
-# resume_from="work_dirs/bevdetoccv2-occflow1006-movetypeonly/epoch_29.pth"
+# resume_from="work_dirs/bevdetoccv2-vismask-926/epoch_12.pth"
 # load_from="ckpts/bevdet-r50-4d-stereo-cbgs.pth"
 # fp16 = dict(loss_scale='dynamic')

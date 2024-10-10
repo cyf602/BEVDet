@@ -15,7 +15,7 @@ from .nuscenes_dataset import NuScenesDataset
 from .occ_metrics import Metric_mIoU, Metric_FScore
 
 colors_map = np.array(
-    [
+    [#此处类别有误
         [0,   0,   0, 255],  # 0 undefined
         [255, 158, 0, 255],  # 1 car  orange
         [0, 0, 230, 255],    # 2 pedestrian  Blue
@@ -198,7 +198,10 @@ class NuScenesDatasetOccpancyv2(NuScenesDatasetOccpancy):#for openoccv2
             # if 'occupancy_preds' in occ_results[data_id].keys():
                 # occ_preds.append(occ_results[data_id]['occupancy_preds'].cpu().numpy())
             # else:
-            occ_preds.append(occ_results[data_id]['occ_results'])
+            if occ_results[data_id]['occ_results'] is None:
+                occ_preds.append(gt_semantics)
+            else:
+                occ_preds.append(occ_results[data_id]['occ_results'])
             flow_preds.append(occ_results[data_id]['flow_results'])
         # save_results(occ_preds, occ_gts, flow_preds, flow_gts, lidar_origins)
         ray_based_miou(occ_preds, occ_gts, flow_preds, flow_gts, lidar_origins)
