@@ -12,6 +12,7 @@ from mmdet.models.backbones.resnet import BasicBlock
 from ..builder import NECKS
 
 from torch.utils.checkpoint import checkpoint
+from mmcv.cnn.bricks.conv_module import ConvModule
 
 
 @NECKS.register_module()
@@ -663,7 +664,7 @@ class DepthNet(nn.Module):
             else:
                 with torch.no_grad():
                     cost_volumn = self.calculate_cost_volumn(stereo_metas)
-            cost_volumn = self.cost_volumn_net(cost_volumn)
+            cost_volumn = self.cost_volumn_net(cost_volumn)#[6,88,64->16,176->44]
             depth = torch.cat([depth, cost_volumn], dim=1)
         if self.with_cp:
             depth = checkpoint(self.depth_conv, depth)
@@ -736,11 +737,19 @@ class DepthAggregation(nn.Module):
 @NECKS.register_module()
 class LSSViewTransformerBEVDepth(LSSViewTransformer):
 
-    def __init__(self, loss_depth_weight=3.0, depthnet_cfg=dict(), **kwargs):
+    def __init__(self, loss_depth_weight=3.0, depthnet_cfg=dict(), extra_convs=[],**kwargs):
         super(LSSViewTransformerBEVDepth, self).__init__(**kwargs)
         self.loss_depth_weight = loss_depth_weight
         self.depth_net = DepthNet(self.in_channels, self.in_channels,
                                   self.out_channels, self.D, **depthnet_cfg)
+        # extra_conv_modules=[]
+        # for i,extra_conv in  enumerate(extra_convs):
+        #     extra_conv_modules.append(ConvModule(extra_conv))
+        # if extra_conv_modules:
+        #     self.extra_conv=nn.Sequential(*extra_conv_modules)
+        # else:
+        #     self.extra_conv=None
+            
 
     def get_mlp_input(self, sensor2ego, ego2global, intrin, post_rot, post_tran, bda):
         B, N, _, _ = sensor2ego.shape

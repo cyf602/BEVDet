@@ -9,7 +9,14 @@ from torch.utils.cpp_extension import load
 from tqdm import tqdm
 from prettytable import PrettyTable
 from mmcv import dump
-import random
+import random,json
+# from mmdet3d.utils.logger import get_root_logger
+from datetime import datetime
+now=datetime.now()
+time_str = now.strftime("%Y-%m-%d-%H:%M:%S")
+save_root="work_dirs/evaluation_results/"
+savepath=save_root+time_str+".json"
+# from tools.utils.vis_bev import vis_bev_view
 
 dvr = load("dvr", sources=["tools/ray_iou/lib/dvr/dvr.cpp", "tools/ray_iou/lib/dvr/dvr.cu"], verbose=True, extra_cuda_cflags=['-allow-unsupported-compiler'])
 
@@ -28,6 +35,7 @@ flow_class_names = [
     'car', 'truck', 'trailer', 'bus', 'construction_vehicle',
     'bicycle', 'motorcycle', 'pedestrian',
 ]
+# logger = get_root_logger()
 
 # https://github.com/tarashakhurana/4d-occ-forecasting/blob/ff986082cd6ea10e67ab7839bf0e654736b3f4e2/test_fgbg.py#L29C1-L46C16
 def get_rendered_pcds(origin, points, tindex, pred_dist):
@@ -301,11 +309,15 @@ def main(sem_pred_list, sem_gt_list, flow_pred_list, flow_gt_list, lidar_origin_
         assert pcd_pred.shape == pcd_gt.shape
         pcd_pred_list.append(pcd_pred)#N,4
         pcd_gt_list.append(pcd_gt)
-        # coors_pred_list.append(coors_pred)
-        # coors_gt_list.append(coors_gt)
-    # save_dict={'occ_gts':sem_gt_list,'flow_gts':flow_gt_list,'sem_pred':sem_pred_list,
-            #    'flow_preds':flow_pred_list,'coors_gt':coors_gt,'coors_pred':coors_pred}
-    # dump(save_dict,"test_results/resultckpt9051820.pkl")
+    # preds_occ=preds_occ.detach().clone()
+    # preds_occ=preds_occ.argmax(dim=-1)
+    # preds_occ=preds_occ.view(-1,H,W,Z)
+    # preds_flow=preds_flow.detach().clone().view(B,H,W,Z,-1)
+    # voxel_flow=voxel_flow.view(B,H,W,Z,-1)
+    # voxel_semantics=voxel_semantics.view(B,H,W,Z)
+    # mask=mask_camera.view(B,H,W,Z)
+    # vis_bev_view(preds_occ,voxel_semantics,preds_flow,voxel_flow,mask=mask,
+    #                 save_root=self.show_dir+'mask',idx=self.vis_idx)
     iou_list, ave_list = calc_metrics(pcd_pred_list, pcd_gt_list)
     
     table = PrettyTable([
@@ -334,7 +346,13 @@ def main(sem_pred_list, sem_gt_list, flow_pred_list, flow_gt_list, lidar_origin_
     mave = np.nanmean(ave_list)
     
     occ_score = miou * 0.9 + max(1 - mave, 0.0) * 0.1
-    
+    eval_dict={
+        'miou':[round(np.nanmean(iou_list[0]),3),round(np.nanmean(iou_list[1]),3),round(np.nanmean(iou_list[2]),3)],
+        'mAVE':round(np.nanmean(ave_list),3),
+        'occ_score':occ_score
+    }
+    with open(savepath, 'a') as f:
+        f.write(json.dumps(str(eval_dict)) + '\n')
     print(' --- Occ score:', occ_score)
 
     torch.cuda.empty_cache()

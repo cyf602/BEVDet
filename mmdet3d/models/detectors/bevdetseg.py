@@ -324,7 +324,7 @@ class BEVDepth4D_Multitask(BEVDepth4D):
         if self.streaming_bev:
             self.bev_memory.eval()
             img_feats = [self.update_bev_feature(img_feats[0], img_metas)]
-        bbox_list = [dict() for _ in range(len(img_metas))]
+        bbox_list = [dict() for _ in range(len(img_metas))]#len==1
         bbox_pts,seg_preds = self.simple_test_pts(img_feats, img_metas, rescale=rescale)
         # for result_dict, pts_bbox,seg_pred in zip(bbox_list, bbox_pts,seg_preds):
         #     result_dict['pts_bbox'] = pts_bbox

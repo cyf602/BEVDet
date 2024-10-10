@@ -1547,7 +1547,7 @@ class BEVAug(object):
 
 @PIPELINES.register_module()
 class BEVAugv2(BEVAug):
-    def __init__(self, bev_h,bev_w,**kwargs):
+    def __init__(self, bev_h=400,bev_w=200,**kwargs):
         super().__init__(**kwargs)
         ref_y, ref_x = torch.meshgrid(
             torch.linspace(

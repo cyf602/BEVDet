@@ -166,7 +166,7 @@ model = dict(
         map_grid_conf=map_grid_conf,
         in_channels=256,
         pred_det=True,
-        pred_seg=False,
+        pred_seg=True,
         pred_vec=False,
         loss_seg=dict(
                 type='CrossEntropyLoss',
@@ -345,7 +345,8 @@ share_data_config = dict(
     modality=input_modality,
     img_info_prototype='bevdet4d',
     multi_adj_frame_id_cfg=multi_adj_frame_id_cfg,
-    version="v1.0-trainval",
+    version="v1.0-mini",
+    # version="v1.0-trainval",
 )
 
 test_data_config = dict(

@@ -66,7 +66,7 @@ grid_config = {
 
 numC_Trans = 32
 
-multi_adj_frame_id_cfg = (1, 2+1, 1)
+multi_adj_frame_id_cfg = (1, 1+1, 1)
 
 model = dict(
     type='BEVStereo4DOCC',
@@ -75,41 +75,40 @@ model = dict(
     num_extraconv2d=0,#conv2d nums in head
     pred_flow=True,
     pred_occ=True,
-    img_backbone=dict(
-        # pretrained='torchvision://resnet50',
-        pretrained='ckpts/resnet101-5d3b4d8f.pth',
-        type='ResNet',
-        depth=101,
-        num_stages=4,
-        out_indices=(0,2, 3),
-        frozen_stages=-1,
-        norm_cfg=dict(type='BN', requires_grad=True),
-        norm_eval=False,
-        with_cp=True,
-        style='pytorch'),
-    img_neck=dict(
-        type='CustomFPN',
-        in_channels=[1024, 2048],
-        out_channels=256,
-        num_outs=1,
-        start_level=0,
-        out_ids=[0]),
     # img_backbone=dict(
-    #     _delete_=True,
-    #     type='FlashInternImage',
-    #     core_op='DCNv4',
-    #     channels=64,
-    #     depths=[4, 4, 18, 4],
-    #     groups=[4, 8, 16, 32],
-    #     mlp_ratio=4.,
-    #     drop_path_rate=0.2,
-    #     norm_layer='LN',
-    #     layer_scale=1.0,
-    #     offset_scale=1.0,
-    #     post_norm=False,
-    #     with_cp=True,
+    #     pretrained='torchvision://resnet50',
+    #     type='ResNet',
+    #     depth=50,
+    #     num_stages=4,
     #     out_indices=(0, 2, 3),
-    #     init_cfg=dict(type='Pretrained', checkpoint='ckpts/mask_rcnn_flash_internimage_t_fpn_3x_coco.pth')),
+    #     frozen_stages=-1,
+    #     norm_cfg=dict(type='BN', requires_grad=True),
+    #     norm_eval=False,
+    #     with_cp=True,
+    #     style='pytorch'),
+    # img_neck=dict(
+    #     type='CustomFPN',
+    #     in_channels=[1024, 2048],
+    #     out_channels=256,
+    #     num_outs=1,
+    #     start_level=0,
+    #     out_ids=[0]),
+    img_backbone=dict(
+        _delete_=True,
+        type='FlashInternImage',
+        core_op='DCNv4',
+        channels=64,
+        depths=[4, 4, 18, 4],
+        groups=[4, 8, 16, 32],
+        mlp_ratio=4.,
+        drop_path_rate=0.2,
+        norm_layer='LN',
+        layer_scale=1.0,
+        offset_scale=1.0,
+        post_norm=False,
+        with_cp=True,
+        out_indices=(0, 2, 3),
+        init_cfg=dict(type='Pretrained', checkpoint='ckpts/mask_rcnn_flash_internimage_t_fpn_3x_coco.pth')),
     # img_backbone=dict(
     #     _delete_=True,
     #     type='InternImage',
@@ -126,13 +125,13 @@ model = dict(
     #     with_cp=False,
     #     out_indices=(0, 2, 3),# 64,128,256,512
     #     init_cfg=dict(type='Pretrained', checkpoint='ckpts/mask_rcnn_flash_internimage_t_fpn_3x_coco.pth')),
-    # img_neck=dict(
-    #     type='CustomFPN',
-    #     in_channels=[256,512],
-    #     out_channels=256,
-    #     num_outs=1,
-    #     start_level=0,
-    #     out_ids=[0]),
+    img_neck=dict(
+        type='CustomFPN',
+        in_channels=[256,512],
+        out_channels=256,
+        num_outs=1,
+        start_level=0,
+        out_ids=[0]),
     img_view_transformer=dict(
         type='LSSViewTransformerBEVStereo',
         grid_config=grid_config,
@@ -173,6 +172,12 @@ model = dict(
         type='CrossEntropyLoss',
         use_sigmoid=False,
         loss_weight=1.0),
+    # loss_occ=dict(
+    #         type='FocalLoss',
+    #         use_sigmoid=True,
+    #         gamma=2.0,
+    #         alpha=0.25,
+    #         loss_weight=1.0),
     loss_flow=dict(type='L1Loss', loss_weight=0.25),
     use_mask=True,
 )
@@ -186,12 +191,12 @@ file_client_args = dict(backend='disk')
 bda_aug_conf = dict(
     rot_lim=(-0., 0.),
     scale_lim=(1., 1.),
-    flip_dx_ratio=0,
-    flip_dy_ratio=0)
+    flip_dx_ratio=0.5,
+    flip_dy_ratio=0.5)
 
 train_pipeline = [
     dict(
-        type='PrepareImageInputsv2',
+        type='PrepareImageInputs',
         is_train=True,
         data_config=data_config,
         sequential=True),
@@ -200,8 +205,6 @@ train_pipeline = [
     dict(type='LoadAnnotations'),
     dict(
         type='BEVAugv2',
-        bev_h=400,#bev 分割
-        bev_w=200,
         bda_aug_conf=bda_aug_conf,
         classes=class_names),
     dict(
@@ -218,11 +221,9 @@ train_pipeline = [
 ]
 
 test_pipeline = [
-    dict(type='PrepareImageInputsv2', data_config=data_config, sequential=True),
+    dict(type='PrepareImageInputs', data_config=data_config, sequential=True),
     dict(type='LoadAnnotations'),
     dict(type='BEVAugv2',
-         bev_h=400,#bev 分割
-         bev_w=200,
          bda_aug_conf=bda_aug_conf,
          classes=class_names,
          is_train=False),
@@ -268,7 +269,7 @@ test_data_config = dict(
     ann_file=data_root + 'bevdetv3-nuscenes_infos_val.pkl')
 
 data = dict(
-    samples_per_gpu=1,
+    samples_per_gpu=4,
     workers_per_gpu=4,
     train=dict(
         data_root=data_root,
@@ -298,9 +299,9 @@ lr_config = dict(
     warmup='linear',
     warmup_iters=200,
     warmup_ratio=0.001,
-    step=[22,27])
+    step=[100,])
 checkpoint_config = dict(interval=1)
-evaluation = dict(interval=3, pipeline=test_pipeline)
+evaluation = dict(interval=1, pipeline=test_pipeline)
 runner = dict(type='EpochBasedRunner', max_epochs=30)
 
 # custom_hooks = [
@@ -310,6 +311,6 @@ runner = dict(type='EpochBasedRunner', max_epochs=30)
 #         priority='NORMAL',
 #     ),
 # ]
-# resume_from="work_dirs/bevdetoccv2-917/latest.pth"
+# resume_from="work_dirs/bevdetoccv2-vismask-926/epoch_12.pth"
 # load_from="ckpts/bevdet-r50-4d-stereo-cbgs.pth"
 # fp16 = dict(loss_scale='dynamic')

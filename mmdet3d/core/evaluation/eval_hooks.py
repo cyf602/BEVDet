@@ -80,11 +80,13 @@ class CustomDistEvalHook(BaseDistEvalHook):
         # self.latest_results = results#?
         
         if runner.rank == 0:
-            if 'pts_bbox' not in results[0][0].keys():
-                return
             print('\n')
             runner.log_buffer.output['eval_iter_num'] = len(self.dataloader)
-            self.dataloader.dataset.evaluate(results)
+            if 'pts_bbox' in results[0][0].keys():
+                self.dataloader.dataset.evaluate(results)
+            if 'flow_results' in results[0][0].keys():
+                self.dataloader.dataset.evaluate_miou(results,
+                                                     runner=runner)
             # key_score = self.evaluate(runner, results)
 
             # the key_score may be `None` so it needs to skip
