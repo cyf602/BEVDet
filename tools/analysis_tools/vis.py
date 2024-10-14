@@ -134,6 +134,7 @@ def main():
     info_path = \
         args.root_path + '/bevdetv3-nuscenes_infos_%s.pkl' % args.version
     dataset = pickle.load(open(info_path, 'rb'))
+    dataset['infos']=list(sorted(dataset['infos'], key=lambda e: e['timestamp']))
     # prepare save path and medium
     vis_dir = args.save_path
     if not os.path.exists(vis_dir):
@@ -159,7 +160,7 @@ def main():
     ]
     print('start visualizing results')
     for cnt, infos in enumerate(
-            dataset['infos'][:min(args.vis_frames, len(dataset['infos']))]):
+            dataset['infos'][:min(min(args.vis_frames,res['results'].__len__()), len(dataset['infos']))]):
         if cnt % 10 == 0:
             print('%d/%d' % (cnt, min(args.vis_frames, len(dataset['infos']))))
         # collect instances

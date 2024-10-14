@@ -12,7 +12,7 @@ from mmdet.models.backbones.resnet import ResNet
 from .bevdet import BEVDepth4D
 @DETECTORS.register_module()
 class BEVDepth4D_Multitask(BEVDepth4D):
-    def __init__(self,seg_head,map_grid_conf,pred_det=True,pred_seg=False,**kwargs):
+    def __init__(self,seg_head,map_grid_conf,pred_det=True,pred_seg=True,**kwargs):
         super(BEVDepth4D_Multitask,self).__init__(**kwargs)
         self.feat_cropper = BevFeatureSlicer(kwargs['img_view_transformer']['grid_config'], map_grid_conf)    
         self.pred_seg=pred_seg
@@ -131,12 +131,15 @@ class BEVDepth4D_Multitask(BEVDepth4D):
     def simple_test_pts(self, x, img_metas, rescale=False):
         """Test function of point cloud branch."""
         outs = self.pts_bbox_head(x)
-        bbox_list = self.pts_bbox_head.get_bboxes(
-            outs, img_metas, rescale=rescale)
-        bbox_results = [
-            bbox3d2result(bboxes, scores, labels)
-            for bboxes, scores, labels in bbox_list
-        ]
+        if self.pred_det:
+            bbox_list = self.pts_bbox_head.get_bboxes(
+                outs, img_metas, rescale=rescale)
+            bbox_results = [
+                bbox3d2result(bboxes, scores, labels)
+                for bboxes, scores, labels in bbox_list
+            ]
+        else:
+            bbox_results=None
         if 'seg_pred' in outs[0][0].keys():
             seg_preds=outs[0][0]['seg_pred']
         else: seg_preds=None

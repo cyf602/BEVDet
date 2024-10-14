@@ -76,8 +76,8 @@ data_config = {
 
 # Model
 grid_config = {
-    'x': [-51.2, 51.2, 0.8],
-    'y': [-51.2, 51.2, 0.8],
+    'x': [-51.2, 51.2, 0.64],#分辨率要是8的倍数（bev fpn)
+    'y': [-51.2, 51.2, 0.64],
     'z': [-5, 3, 8],
     'depth': [1.0, 60.0, 0.5],
 }
@@ -146,6 +146,9 @@ model = dict(
         grid_config=grid_config,
         map_grid_conf=map_grid_conf,
         in_channels=256,
+        pred_det=False,
+        pred_seg=True,
+        pred_vec=False,
         loss_seg=dict(
                 type='CrossEntropyLoss',
                 use_sigmoid=False,
@@ -200,7 +203,7 @@ model = dict(
             point_cloud_range=point_cloud_range,
             grid_size=[1024, 1024, 40],
             voxel_size=voxel_size,
-            out_size_factor=8,
+            out_size_factor=10*grid_config['x'][2],
             dense_reg=1,
             gaussian_overlap=0.1,
             max_objs=500,
@@ -317,7 +320,7 @@ test_data_config = dict(
     )
 
 data = dict(
-    samples_per_gpu=4,
+    samples_per_gpu=1,
     workers_per_gpu=4,
     train=dict(
         type='CBGSDataset',

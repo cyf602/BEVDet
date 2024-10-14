@@ -93,7 +93,7 @@ class SeparateHead(BaseModule):
 
     def forward(self, x):
         """Forward function for SepHead.
-
+        https://zhuanlan.zhihu.com/p/648341247
         Args:
             x (torch.Tensor): Input feature map with the shape of
                 [B, 512, 128, 128].
@@ -288,6 +288,7 @@ class CenterHead(BaseModule):
                  conv_cfg=dict(type='Conv2d'),
                  norm_cfg=dict(type='BN2d'),
                  bias='auto',
+                 pred_det=True,
                  norm_bbox=True,
                  init_cfg=None,
                  task_specific=True):
@@ -308,28 +309,29 @@ class CenterHead(BaseModule):
         self.bbox_coder = build_bbox_coder(bbox_coder)
         self.num_anchor_per_locs = [n for n in num_classes]
         self.fp16_enabled = False
-
+        self.pred_det=pred_det
+        if pred_det:
         # a shared convolution
-        self.shared_conv = ConvModule(
-            in_channels,
-            share_conv_channel,
-            kernel_size=3,
-            padding=1,
-            conv_cfg=conv_cfg,
-            norm_cfg=norm_cfg,
-            bias=bias)
+            self.shared_conv = ConvModule(
+                in_channels,
+                share_conv_channel,
+                kernel_size=3,
+                padding=1,
+                conv_cfg=conv_cfg,
+                norm_cfg=norm_cfg,
+                bias=bias)
 
-        self.task_heads = nn.ModuleList()
+            self.task_heads = nn.ModuleList()
 
-        for num_cls in num_classes:
-            heads = copy.deepcopy(common_heads)
-            heads.update(dict(heatmap=(num_cls, num_heatmap_convs)))
-            separate_head.update(
-                in_channels=share_conv_channel, heads=heads, num_cls=num_cls)
-            self.task_heads.append(builder.build_head(separate_head))
+            for num_cls in num_classes:#1次
+                heads = copy.deepcopy(common_heads)
+                heads.update(dict(heatmap=(num_cls, num_heatmap_convs)))
+                separate_head.update(
+                    in_channels=share_conv_channel, heads=heads, num_cls=num_cls)
+                self.task_heads.append(builder.build_head(separate_head))
 
-        self.with_velocity = 'vel' in common_heads.keys()
-        self.task_specific = task_specific
+            self.with_velocity = 'vel' in common_heads.keys()
+            self.task_specific = task_specific
 
     def forward_single(self, x):
         """Forward function for CenterPoint.
@@ -461,7 +463,7 @@ class CenterHead(BaseModule):
         pc_range = torch.tensor(self.train_cfg['point_cloud_range'])
         voxel_size = torch.tensor(self.train_cfg['voxel_size'])
 
-        feature_map_size = grid_size[:2] // self.train_cfg['out_size_factor']
+        feature_map_size = (grid_size[:2] // self.train_cfg['out_size_factor']).long().tolist()
 
         # reorganize the gt_dict by tasks
         task_masks = []
@@ -857,12 +859,18 @@ class CenterHead(BaseModule):
     
 @HEADS.register_module()
 class CenterHeadDetSeg(CenterHead):
-    def __init__(self,seg_dncoder,grid_config,map_grid_conf,loss_seg,**kwargs):
+    def __init__(self,seg_dncoder,grid_config,map_grid_conf,loss_seg,
+                 pred_seg=True,pred_vec=True,vec_decoder=None,**kwargs):
         super(CenterHeadDetSeg, self).__init__(**kwargs)
-        self.seg_decoder = builder.build_head(seg_dncoder)
+        if pred_seg:
+            self.seg_decoder = builder.build_head(seg_dncoder)
+        if pred_vec:
+            self.vec_decoder=builder.build_head(vec_decoder)
         self.feat_cropper = BevFeatureSlicer(grid_config, map_grid_conf)    
+        self.pred_seg=pred_seg
+        self.pred_vec=pred_vec
         self.segloss=build_loss(loss_seg)
-    
+        
     def forward_single(self, x):
         """Forward function for CenterPoint.
 
@@ -873,14 +881,18 @@ class CenterHeadDetSeg(CenterHead):
         Returns:
             list[dict]: Output results for tasks.
         """
-        ret_dicts = []
-        seg_bev = self.feat_cropper(x)#[B,256,?150->200,150->400]    
-        seg_res=self.seg_decoder(seg_bev)
+        ret_dicts = [{}]
         
-        x = self.shared_conv(x)
-        for task in self.task_heads:#l=1
-            ret_dicts.append(task(x))
-        ret_dicts[0]['seg_pred']=seg_res
+        if self.pred_det:
+            x_ = self.shared_conv(x)
+            for task in self.task_heads:#l=1
+                ret_dicts[0].update(task(x_))
+        if self.pred_seg:
+            seg_bev = self.feat_cropper(x)#[B,256,?150->200,150->400]    
+            seg_res=self.seg_decoder(seg_bev)
+            ret_dicts[0]['seg_pred']=seg_res
+        if self.pred_vec:
+            pass
         return ret_dicts
 
     def loss(self, gt_bboxes_3d, gt_labels_3d, preds_dicts, semantic_indices,**kwargs):
@@ -900,73 +912,77 @@ class CenterHeadDetSeg(CenterHead):
         loss_dict = dict()
         if not self.task_specific:
             loss_dict['loss'] = 0
-        for task_id, preds_dict in enumerate(preds_dicts):
-            # heatmap focal loss
-            preds_dict[0]['heatmap'] = clip_sigmoid(preds_dict[0]['heatmap'])
-            num_pos = heatmaps[task_id].eq(1).float().sum().item()
-            cls_avg_factor = torch.clamp(
-                reduce_mean(heatmaps[task_id].new_tensor(num_pos)),
-                min=1).item()
-            loss_heatmap = self.loss_cls(
-                preds_dict[0]['heatmap'],
-                heatmaps[task_id],
-                avg_factor=cls_avg_factor)
-            target_box = anno_boxes[task_id]
-            # reconstruct the anno_box from multiple reg heads
-            preds_dict[0]['anno_box'] = torch.cat(
-                (
-                    preds_dict[0]['reg'],
-                    preds_dict[0]['height'],
-                    preds_dict[0]['dim'],
-                    preds_dict[0]['rot'],
-                    preds_dict[0]['vel'],
-                ),
-                dim=1,
-            )
+        if self.pred_det:
+            for task_id, preds_dict in enumerate(preds_dicts):
+                # heatmap focal loss
+                preds_dict[0]['heatmap'] = clip_sigmoid(preds_dict[0]['heatmap'])
+                num_pos = heatmaps[task_id].eq(1).float().sum().item()
+                cls_avg_factor = torch.clamp(
+                    reduce_mean(heatmaps[task_id].new_tensor(num_pos)),
+                    min=1).item()
+                loss_heatmap = self.loss_cls(
+                    preds_dict[0]['heatmap'],
+                    heatmaps[task_id],
+                    avg_factor=cls_avg_factor)
+                target_box = anno_boxes[task_id]
+                # reconstruct the anno_box from multiple reg heads
+                preds_dict[0]['anno_box'] = torch.cat(
+                    (
+                        preds_dict[0]['reg'],
+                        preds_dict[0]['height'],
+                        preds_dict[0]['dim'],
+                        preds_dict[0]['rot'],
+                        preds_dict[0]['vel'],
+                    ),
+                    dim=1,
+                )
 
-            # Regression loss for dimension, offset, height, rotation
-            num = masks[task_id].float().sum()
-            ind = inds[task_id]
-            pred = preds_dict[0]['anno_box'].permute(0, 2, 3, 1).contiguous()
-            pred = pred.view(pred.size(0), -1, pred.size(3))
-            pred = self._gather_feat(pred, ind)
-            mask = masks[task_id].unsqueeze(2).expand_as(target_box).float()
-            num = torch.clamp(
-                reduce_mean(target_box.new_tensor(num)), min=1e-4).item()
-            isnotnan = (~torch.isnan(target_box)).float()
-            mask *= isnotnan
-            code_weights = self.train_cfg['code_weights']
-            bbox_weights = mask * mask.new_tensor(code_weights)
-            if self.task_specific:
-                name_list = ['xy', 'z', 'whl', 'yaw', 'vel']
-                clip_index = [0, 2, 3, 6, 8, 10]
-                for reg_task_id in range(len(name_list)):
-                    pred_tmp = pred[
-                        ...,
-                        clip_index[reg_task_id]:clip_index[reg_task_id + 1]]
-                    target_box_tmp = target_box[
-                        ...,
-                        clip_index[reg_task_id]:clip_index[reg_task_id + 1]]
-                    bbox_weights_tmp = bbox_weights[
-                        ...,
-                        clip_index[reg_task_id]:clip_index[reg_task_id + 1]]
-                    loss_bbox_tmp = self.loss_bbox(
-                        pred_tmp,
-                        target_box_tmp,
-                        bbox_weights_tmp,
-                        avg_factor=(num + 1e-4))
-                    loss_dict[f'task{task_id}.loss_%s' %
-                              (name_list[reg_task_id])] = loss_bbox_tmp
-                loss_dict[f'task{task_id}.loss_heatmap'] = loss_heatmap
-            else:
-                loss_bbox = self.loss_bbox(
-                    pred, target_box, bbox_weights, avg_factor=num)
-                loss_dict['loss'] += loss_bbox
-                loss_dict['loss'] += loss_heatmap
-        loss_seg=self.segloss(preds_dicts[0][0]['seg_pred'],semantic_indices)
-        loss_dict['segloss']=loss_seg
+                # Regression loss for dimension, offset, height, rotation
+                num = masks[task_id].float().sum()
+                ind = inds[task_id]
+                pred = preds_dict[0]['anno_box'].permute(0, 2, 3, 1).contiguous()
+                pred = pred.view(pred.size(0), -1, pred.size(3))
+                pred = self._gather_feat(pred, ind)
+                mask = masks[task_id].unsqueeze(2).expand_as(target_box).float()
+                num = torch.clamp(
+                    reduce_mean(target_box.new_tensor(num)), min=1e-4).item()
+                isnotnan = (~torch.isnan(target_box)).float()
+                mask *= isnotnan
+                code_weights = self.train_cfg['code_weights']
+                bbox_weights = mask * mask.new_tensor(code_weights)
+                if self.task_specific:
+                    name_list = ['xy', 'z', 'whl', 'yaw', 'vel']
+                    clip_index = [0, 2, 3, 6, 8, 10]
+                    for reg_task_id in range(len(name_list)):
+                        pred_tmp = pred[
+                            ...,
+                            clip_index[reg_task_id]:clip_index[reg_task_id + 1]]
+                        target_box_tmp = target_box[
+                            ...,
+                            clip_index[reg_task_id]:clip_index[reg_task_id + 1]]
+                        bbox_weights_tmp = bbox_weights[
+                            ...,
+                            clip_index[reg_task_id]:clip_index[reg_task_id + 1]]
+                        loss_bbox_tmp = self.loss_bbox(
+                            pred_tmp,
+                            target_box_tmp,
+                            bbox_weights_tmp,
+                            avg_factor=(num + 1e-4))
+                        loss_dict[f'task{task_id}.loss_%s' %
+                                (name_list[reg_task_id])] = loss_bbox_tmp
+                    loss_dict[f'task{task_id}.loss_heatmap'] = loss_heatmap
+                else:
+                    loss_bbox = self.loss_bbox(
+                        pred, target_box, bbox_weights, avg_factor=num)
+                    loss_dict['loss'] += loss_bbox
+                    loss_dict['loss'] += loss_heatmap
+        if self.pred_seg:
+            loss_seg=self.segloss(preds_dicts[0][0]['seg_pred'],semantic_indices)
+            loss_dict['segloss']=loss_seg
+        if self.pred_vec:
+            pass
         return loss_dict
-
+    
 def calculate_birds_eye_view_parameters(x_bounds, y_bounds, z_bounds):
     """
     Parameters
