@@ -12,11 +12,12 @@ from mmdet.models.backbones.resnet import ResNet
 from .bevdet import BEVDepth4D
 @DETECTORS.register_module()
 class BEVDepth4D_Multitask(BEVDepth4D):
-    def __init__(self,seg_head,map_grid_conf,pred_det=True,pred_seg=True,**kwargs):
+    def __init__(self,map_grid_conf,**kwargs):
         super(BEVDepth4D_Multitask,self).__init__(**kwargs)
         self.feat_cropper = BevFeatureSlicer(kwargs['img_view_transformer']['grid_config'], map_grid_conf)    
-        self.pred_seg=pred_seg
-        self.pred_det=pred_det
+        self.pred_seg=self.pts_bbox_head.pred_seg
+        self.pred_det=self.pts_bbox_head.pred_det
+        self.pred_vec=self.pts_bbox_head.pred_vec
         # if pred_seg:
         #     self.seg_head = builder.build_head(seg_head)
             
@@ -123,9 +124,14 @@ class BEVDepth4D_Multitask(BEVDepth4D):
             points, img=img, img_metas=img_metas, **kwargs)
         bbox_list = [dict() for _ in range(len(img_metas))]
         bbox_pts,seg_preds = self.simple_test_pts(img_feats, img_metas, rescale=rescale)
-        for result_dict, pts_bbox,seg_pred in zip(bbox_list, bbox_pts,seg_preds):
-            result_dict['pts_bbox'] = pts_bbox
-            result_dict['seg_preds']=seg_preds
+        # for result_dict, pts_bbox,seg_pred in zip(bbox_list, bbox_pts,seg_preds):
+        #     result_dict['pts_bbox'] = pts_bbox
+        #     result_dict['seg_preds']=seg_preds
+        for i,result_dict in enumerate(bbox_list):
+            if bbox_pts is not None:
+                result_dict['pts_bbox']=bbox_pts[i]
+            if seg_preds is not None:
+                result_dict['seg_preds']=seg_preds
         return bbox_list
     
     def simple_test_pts(self, x, img_metas, rescale=False):

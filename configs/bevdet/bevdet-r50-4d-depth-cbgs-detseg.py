@@ -98,8 +98,6 @@ model = dict(
     align_after_view_transfromation=False,
     num_adj=len(range(*multi_adj_frame_id_cfg)),
     map_grid_conf=map_grid_conf,
-    pred_det=True,
-    pred_seg=True,
     img_backbone=dict(
         pretrained='torchvision://resnet50',
         type='ResNet',
@@ -153,7 +151,7 @@ model = dict(
                 type='CrossEntropyLoss',
                 use_sigmoid=False,
                 loss_weight=3.0,
-                class_weight=[0.3, 2.0, 2.0, 2.0]),
+                class_weight=[0.3, 2.0, 2.0, 2.0]),#0.3
         seg_dncoder=dict(
             type='SegEncode',
             inC=256,
@@ -188,15 +186,15 @@ model = dict(
         loss_cls=dict(type='GaussianFocalLoss', reduction='mean', loss_weight=6.),
         loss_bbox=dict(type='L1Loss', reduction='mean', loss_weight=1.5),
         norm_bbox=True),
-    seg_head=dict(
-            type='SegEncode',
-            inC=256,
-            outC=4,
-            loss_seg=dict(
-                type='CrossEntropyLoss',
-                use_sigmoid=False,
-                loss_weight=3.0,
-                class_weight=[0.3, 2.0, 2.0, 2.0]),),
+    # seg_head=dict(
+    #         type='SegEncode',
+    #         inC=256,
+    #         outC=4,
+    #         loss_seg=dict(
+    #             type='CrossEntropyLoss',
+    #             use_sigmoid=False,
+    #             loss_weight=3.0,
+    #             class_weight=[0.3, 2.0, 2.0, 2.0]),),
     # model training and testing settings
     train_cfg=dict(
         pts=dict(
@@ -239,8 +237,8 @@ file_client_args = dict(backend='disk')
 bda_aug_conf = dict(
     rot_lim=(-22.5, 22.5),
     scale_lim=(0.95, 1.05),
-    flip_dx_ratio=0.5,
-    flip_dy_ratio=0.5)
+    flip_dx_ratio=0.0,
+    flip_dy_ratio=0.0)
 
 train_pipeline = [
     dict(
@@ -320,7 +318,7 @@ test_data_config = dict(
     )
 
 data = dict(
-    samples_per_gpu=1,
+    samples_per_gpu=4,
     workers_per_gpu=4,
     train=dict(
         type='CBGSDataset',
@@ -367,3 +365,4 @@ custom_hooks = [
 ]
 find_unused_parameters=False
 # fp16 = dict(loss_scale='dynamic')
+# resume_from="work_dirs/bevdepth-segonly160-1015/epoch_5.pth"

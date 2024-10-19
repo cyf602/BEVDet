@@ -222,7 +222,7 @@ class NuScenesDataset(Custom3DDataset):
         """
         data = mmcv.load(ann_file, file_format='pkl')
         data_infos = list(sorted(data['infos'], key=lambda e: e['timestamp']))
-        data_infos = data_infos[::self.load_interval]#[:150]
+        data_infos = data_infos[::self.load_interval]#[:100]
         self.metadata = data['metadata']
         self.version = self.metadata['version']
         return data_infos

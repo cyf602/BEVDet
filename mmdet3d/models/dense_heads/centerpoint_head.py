@@ -330,8 +330,8 @@ class CenterHead(BaseModule):
                     in_channels=share_conv_channel, heads=heads, num_cls=num_cls)
                 self.task_heads.append(builder.build_head(separate_head))
 
-            self.with_velocity = 'vel' in common_heads.keys()
-            self.task_specific = task_specific
+        self.with_velocity = 'vel' in common_heads.keys()
+        self.task_specific = task_specific
 
     def forward_single(self, x):
         """Forward function for CenterPoint.
@@ -907,12 +907,13 @@ class CenterHeadDetSeg(CenterHead):
         Returns:
             dict[str:torch.Tensor]: Loss of heatmap and bbox of each task.
         """
-        heatmaps, anno_boxes, inds, masks = self.get_targets(
-            gt_bboxes_3d, gt_labels_3d)
+        
         loss_dict = dict()
         if not self.task_specific:
             loss_dict['loss'] = 0
         if self.pred_det:
+            heatmaps, anno_boxes, inds, masks = self.get_targets(
+                gt_bboxes_3d, gt_labels_3d)
             for task_id, preds_dict in enumerate(preds_dicts):
                 # heatmap focal loss
                 preds_dict[0]['heatmap'] = clip_sigmoid(preds_dict[0]['heatmap'])
