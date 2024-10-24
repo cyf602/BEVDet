@@ -14,7 +14,8 @@ from .custom_3d import Custom3DDataset
 from .pipelines import Compose
 from .map_utils import VectorizedLocalMap
 from nuscenes import NuScenes
-
+from nuscenes.utils.geometry_utils import transform_matrix
+from pyquaternion import Quaternion
 @DATASETS.register_module()
 class NuScenesDataset(Custom3DDataset):
     r"""NuScenes Dataset.
@@ -222,7 +223,7 @@ class NuScenesDataset(Custom3DDataset):
         """
         data = mmcv.load(ann_file, file_format='pkl')
         data_infos = list(sorted(data['infos'], key=lambda e: e['timestamp']))
-        data_infos = data_infos[::self.load_interval]#[:100]
+        data_infos = data_infos[::self.load_interval]#[:101]
         self.metadata = data['metadata']
         self.version = self.metadata['version']
         return data_infos
@@ -253,6 +254,7 @@ class NuScenesDataset(Custom3DDataset):
             pts_filename=info['lidar_path'],
             sweeps=info['sweeps'],
             timestamp=info['timestamp'] / 1e6,
+            scene_name=info['scene_name']
         )
         if hasattr(self, 'vector_map'):
             input_dict['vectors'] = self.get_map_ann_info(info)
@@ -290,6 +292,7 @@ class NuScenesDataset(Custom3DDataset):
                     input_dict['ann_info'] = annos
             else:
                 assert 'bevdet' in self.img_info_prototype
+                input_dict['e2g_mat']=transform_matrix(info['ego2global_translation'],Quaternion(info['ego2global_rotation']))
                 input_dict.update(dict(curr=info))
                 if '4d' in self.img_info_prototype:
                     info_adj_list = self.get_adj_info(info, index)

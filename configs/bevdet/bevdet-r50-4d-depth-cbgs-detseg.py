@@ -73,7 +73,8 @@ data_config = {
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-
+batch_size=1
+bev_embed_dims=256
 # Model
 grid_config = {
     'x': [-51.2, 51.2, 0.64],#分辨率要是8的倍数（bev fpn)
@@ -98,6 +99,7 @@ model = dict(
     align_after_view_transfromation=False,
     num_adj=len(range(*multi_adj_frame_id_cfg)),
     map_grid_conf=map_grid_conf,
+    grid_conf=grid_config,
     img_backbone=dict(
         pretrained='torchvision://resnet50',
         type='ResNet',
@@ -139,6 +141,14 @@ model = dict(
         num_channels=[numC_Trans,],
         stride=[1,],
         backbone_output_ids=[0,]),
+    # streaming_cfg=dict(
+    #     streaming_bev=True,
+    #     batch_size=batch_size,
+    #     fusion_cfg=dict(
+    #         type='ConvGRU',
+    #         out_channels=bev_embed_dims,
+    #     )
+    # ),
     pts_bbox_head=dict(
         type='CenterHeadDetSeg',
         grid_config=grid_config,
@@ -235,8 +245,10 @@ data_root = 'data/nuscenes/'
 file_client_args = dict(backend='disk')
 
 bda_aug_conf = dict(
-    rot_lim=(-22.5, 22.5),
-    scale_lim=(0.95, 1.05),
+    rot_lim=(-0., 0.),
+    scale_lim=(1., 1.),
+    # rot_lim=(-22.5, 22.5),#看起来对分割效果不好
+    # scale_lim=(0.95, 1.05),
     flip_dx_ratio=0.0,
     flip_dy_ratio=0.0)
 
@@ -264,7 +276,11 @@ train_pipeline = [
     dict(type='DefaultFormatBundle3D', class_names=class_names),
     dict(
         type='Collect3D', keys=['img_inputs', 'gt_bboxes_3d', 'gt_labels_3d',
-                                'gt_depth','semantic_indices'])
+                                'gt_depth','semantic_indices'],
+        meta_keys=('token', 'ego2img', 'sample_idx', 'ego2global_translation',
+        'ego2global_rotation', 'img_shape', 'scene_name','e2g_mat'
+        # 'pts_filename','box_mode_3d','box_type_3d'
+        ))
 ]
 
 test_pipeline = [
@@ -291,7 +307,8 @@ test_pipeline = [
                 type='DefaultFormatBundle3D',
                 class_names=class_names,
                 with_label=False),
-            dict(type='Collect3D', keys=['points', 'img_inputs','semantic_indices'])
+            dict(type='Collect3D', keys=['points', 'img_inputs','semantic_indices'],
+                 meta_keys=('scene_name','e2g_mat'))
         ])
 ]
 
@@ -318,8 +335,9 @@ test_data_config = dict(
     )
 
 data = dict(
-    samples_per_gpu=4,
+    samples_per_gpu=batch_size,
     workers_per_gpu=4,
+    shuffle=True,
     train=dict(
         type='CBGSDataset',
         dataset=dict(
@@ -333,13 +351,25 @@ data = dict(
         # we use box_type_3d='LiDAR' in kitti and nuscenes dataset
         # and box_type_3d='Depth' in sunrgbd and scannet dataset.
         box_type_3d='LiDAR')),
+    # train=dict(
+    #     type='NuScenesDataset',#'CBGSDataset',    
+    #     data_root=data_root,
+    #     ann_file=data_root + 'bevdetv3-nuscenes_infos_train.pkl',
+    #     pipeline=train_pipeline,
+    #     classes=class_names,
+    #     test_mode=False,
+    #     use_valid_flag=True,
+    #     grid_conf=map_grid_conf,
+    #     # we use box_type_3d='LiDAR' in kitti and nuscenes dataset
+    #     # and box_type_3d='Depth' in sunrgbd and scannet dataset.
+    #     box_type_3d='LiDAR'),
     val=test_data_config,
     test=test_data_config)
 
 for key in ['val', 'test']:
     data[key].update(share_data_config)
+# data['train'].update(share_data_config)
 data['train']['dataset'].update(share_data_config)
-
 # Optimizer
 optimizer = dict(type='AdamW', lr=2e-4, weight_decay=1e-2)
 optimizer_config = dict(grad_clip=dict(max_norm=5, norm_type=2))

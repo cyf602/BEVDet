@@ -20,9 +20,9 @@ class CBGSDataset(object):
         self.dataset = dataset
         self.CLASSES = dataset.CLASSES
         self.cat2id = {name: i for i, name in enumerate(self.CLASSES)}
-        self.sample_indices = self._get_sample_indices()
+        self.sample_indices = self._get_sample_indices()#~7723*16
         # self.dataset.data_infos = self.data_infos
-        if hasattr(self.dataset, 'flag'):
+        if hasattr(self.dataset, 'flag'):#全是0？
             self.flag = np.array(
                 [self.dataset.flag[ind] for ind in self.sample_indices],
                 dtype=np.uint8)
@@ -43,7 +43,7 @@ class CBGSDataset(object):
                 class_sample_idxs[cat_id].append(idx)
         duplicated_samples = sum(
             [len(v) for _, v in class_sample_idxs.items()])
-        class_distribution = {
+        class_distribution = {#各类出现的sample占总出现次数的比例 sum=1
             k: len(v) / duplicated_samples
             for k, v in class_sample_idxs.items()
         }
@@ -51,9 +51,9 @@ class CBGSDataset(object):
         sample_indices = []
 
         frac = 1.0 / len(self.CLASSES)
-        ratios = [frac / max(v,1e-6) for v in class_distribution.values()]
-        for cls_inds, ratio in zip(list(class_sample_idxs.values()), ratios):
-            sample_indices += np.random.choice(cls_inds,
+        ratios = [frac / max(v,1e-6) for v in class_distribution.values()]#sum>1 ~13
+        for cls_inds, ratio in zip(list(class_sample_idxs.values()), ratios):#每个类出现的sampleid
+            sample_indices += np.random.choice(cls_inds,#在每类出现样本中选取一定比例的sample组成新数据
                                                int(len(cls_inds) *
                                                    ratio)).tolist()
         return sample_indices
@@ -73,4 +73,4 @@ class CBGSDataset(object):
         Returns:
             int: Length of data infos.
         """
-        return len(self.sample_indices)
+        return len(self.sample_indices)#此处改变了epoch的样本数

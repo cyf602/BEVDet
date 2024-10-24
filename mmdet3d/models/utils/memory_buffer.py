@@ -28,7 +28,7 @@ class StreamTensorMemory(object):
             return self.test_img_metas_memory
 
     def update(self, memory, img_metas):
-        for i in range(self.bs):
+        for i in range(min(self.bs,len(memory))):
             self.memory_list[i] = memory[i].clone().detach()
             self.img_metas_memory[i] = copy.deepcopy(img_metas[i])
         
@@ -46,11 +46,12 @@ class StreamTensorMemory(object):
         is_first_frame_list = []
         
         for i in range(self.bs):
-            if not self.img_metas_memory[i]:
+            if not self.img_metas_memory[i] or len(img_metas)<self.bs:
                 is_first_frame = True
             else:
                 is_first_frame = (img_metas[i]['scene_name'] != self.img_metas_memory[i]['scene_name'])
-
+            # if self.img_metas_memory[i] is not None:
+                # print(img_metas[i]['scene_name'],self.img_metas_memory[i]['scene_name'])
             if is_first_frame:
                 self.reset_single(i)
 

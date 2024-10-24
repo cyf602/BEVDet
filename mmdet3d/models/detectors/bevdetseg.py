@@ -3,6 +3,7 @@ import torch.nn.functional as F
 from mmcv.runner import force_fp32
 from torch import nn
 from mmdet3d.core.bbox.transforms import bbox3d2result
+from mmdet3d.models.utils.memory_buffer import StreamTensorMemory
 from mmdet3d.ops.bev_pool_v2.bev_pool import TRTBEVPoolv2
 from mmdet.models import DETECTORS
 from .. import builder
@@ -10,9 +11,12 @@ from .centerpoint import CenterPoint
 from mmdet3d.models.utils.grid_mask import GridMask
 from mmdet.models.backbones.resnet import ResNet
 from .bevdet import BEVDepth4D
+from nuscenes.utils.geometry_utils import transform_matrix
+from pyquaternion import Quaternion
+
 @DETECTORS.register_module()
 class BEVDepth4D_Multitask(BEVDepth4D):
-    def __init__(self,map_grid_conf,**kwargs):
+    def __init__(self,map_grid_conf,grid_conf,streaming_cfg=None,**kwargs):
         super(BEVDepth4D_Multitask,self).__init__(**kwargs)
         self.feat_cropper = BevFeatureSlicer(kwargs['img_view_transformer']['grid_config'], map_grid_conf)    
         self.pred_seg=self.pts_bbox_head.pred_seg
@@ -20,8 +24,77 @@ class BEVDepth4D_Multitask(BEVDepth4D):
         self.pred_vec=self.pts_bbox_head.pred_vec
         # if pred_seg:
         #     self.seg_head = builder.build_head(seg_head)
+        if streaming_cfg:
+            self.streaming_bev = streaming_cfg['streaming_bev']
+        else:
+            self.streaming_bev = False
+        if self.streaming_bev:
+            self.stream_fusion_neck = builder.build_neck(streaming_cfg['fusion_cfg'])
+            self.batch_size = streaming_cfg['batch_size']
+            self.bev_memory = StreamTensorMemory(
+                self.batch_size,
+            )
+            xmin, xmax = grid_conf['x'][:2]
+            ymin, ymax = grid_conf['y'][:2]
+            self.roi_size=(xmax-xmin,ymax-ymin)
+            bevw=int((xmax-xmin)/grid_conf['x'][2])
+            bevh=int((ymax-ymin)/grid_conf['y'][2])
+            x = torch.linspace(xmin, xmax, bevw)
+            y = torch.linspace(ymax, ymin, bevh)
+            y, x = torch.meshgrid(y, x)
+            z = torch.zeros_like(x)
+            ones = torch.ones_like(x)
+            plane = torch.stack([x, y, z, ones], dim=-1)
+#https://zhuanlan.zhihu.com/p/688608681 ; https://blog.csdn.net/devil_son1234/article/details/130699031
+            self.register_buffer('plane', plane.double())
             
+    def update_bev_feature(self, curr_bev_feats, img_metas):
+        '''
+        Args:
+            curr_bev_feat: torch.Tensor of shape [B, neck_input_channels, H, W]
+            img_metas: current image metas (List of #bs samples)
+            bev_memory: where to load and store (training and testing use different buffer)
+            pose_memory: where to load and store (training and testing use different buffer)
 
+        Out:
+            fused_bev_feat: torch.Tensor of shape [B, neck_input_channels, H, W]
+        '''
+
+        bs = curr_bev_feats.size(0)
+        fused_feats_list = []
+
+        memory = self.bev_memory.get(img_metas)
+        bev_memory, pose_memory = memory['tensor'], memory['img_metas']
+        is_first_frame_list = memory['is_first_frame']
+
+        for i in range(bs):
+            is_first_frame = is_first_frame_list[i]
+            if is_first_frame:
+                new_feat = self.stream_fusion_neck(curr_bev_feats[i].clone().detach(), curr_bev_feats[i])
+                fused_feats_list.append(new_feat)
+            else:
+                # else, warp buffered bev feature to current pose
+                prev_g2e_matrix=torch.inverse(self.plane.new_tensor(pose_memory[i]['e2g_mat'], dtype=torch.float64))
+                curr_e2g_matrix=img_metas[i]['e2g_mat']
+                curr2prev_matrix = prev_g2e_matrix @ torch.from_numpy(curr_e2g_matrix).to(prev_g2e_matrix.device)
+                prev_coord = torch.einsum('lk,ijk->ijl', curr2prev_matrix, self.plane).float()[..., :2]
+
+                # from (-30, 30) or (-15, 15) to (-1, 1)
+                prev_coord[..., 0] = prev_coord[..., 0] / (self.roi_size[0]/2)
+                prev_coord[..., 1] = -prev_coord[..., 1] / (self.roi_size[1]/2)
+
+                warped_feat = F.grid_sample(bev_memory[i].unsqueeze(0), 
+                                prev_coord.unsqueeze(0), 
+                                padding_mode='zeros', align_corners=False).squeeze(0)
+                new_feat = self.stream_fusion_neck(warped_feat, curr_bev_feats[i])
+                fused_feats_list.append(new_feat)
+
+        fused_feats = torch.stack(fused_feats_list, dim=0)
+
+        self.bev_memory.update(fused_feats, img_metas)
+        
+        return fused_feats
+    
     def forward_train(self,
                       points=None,
                       img_metas=None,
@@ -58,8 +131,14 @@ class BEVDepth4D_Multitask(BEVDepth4D):
         Returns:
             dict: Losses of different branches.
         """
-        img_feats, pts_feats, depth = self.extract_feat(
+        img_feats, pts_feats, depth = self.extract_feat(#l=0[B,256,h,w]
             points, img=img_inputs, img_metas=img_metas, **kwargs)
+        # if img_feats[0].device==torch.device('cuda:0'):
+        #     print(img_metas[0]['scene_name'])
+        if self.streaming_bev:
+            self.bev_memory.train()#[B,256,bevw,bevh]
+            img_feats = [self.update_bev_feature(img_feats[0], img_metas)]
+        #bev_feats:[B,256,160,160]
         gt_depth = kwargs['gt_depth']
         loss_depth = self.img_view_transformer.get_depth_loss(gt_depth, depth)
         losses = dict(loss_depth=loss_depth)
@@ -73,12 +152,12 @@ class BEVDepth4D_Multitask(BEVDepth4D):
         #     losses.update(losses_seg)
         return losses
     
-    def forward_seg_train(self,img_feats,semantic_indices):
-        seg_bev = self.feat_cropper(img_feats[0])#[B,256,?150->200,150->400]    
-        outs=self.seg_head(seg_bev)
-        seg_loss_inputs = [outs,semantic_indices]
-        seg_losses = self.seg_head.segloss(*seg_loss_inputs)
-        return seg_losses
+    # def forward_seg_train(self,img_feats,semantic_indices):
+    #     seg_bev = self.feat_cropper(img_feats[0])#[B,256,?150->200,150->400]    
+    #     outs=self.seg_head(seg_bev)
+    #     seg_loss_inputs = [outs,semantic_indices]
+    #     seg_losses = self.seg_head.segloss(*seg_loss_inputs)
+    #     return seg_losses
     
     def forward_pts_train(self,
                           pts_feats,
@@ -102,7 +181,7 @@ class BEVDepth4D_Multitask(BEVDepth4D):
         Returns:
             dict: Losses of each branch.
         """
-        outs = self.pts_bbox_head(pts_feats)
+        outs = self.pts_bbox_head(pts_feats)#[B,256,h,w]?
         loss_inputs = [gt_bboxes_3d, gt_labels_3d, outs,semantic_indices]
         losses = self.pts_bbox_head.loss(*loss_inputs)
         
@@ -122,6 +201,9 @@ class BEVDepth4D_Multitask(BEVDepth4D):
         """Test function without augmentaiton."""
         img_feats, _, _ = self.extract_feat(
             points, img=img, img_metas=img_metas, **kwargs)
+        if self.streaming_bev:
+            self.bev_memory.eval()
+            img_feats = [self.update_bev_feature(img_feats[0], img_metas)]
         bbox_list = [dict() for _ in range(len(img_metas))]
         bbox_pts,seg_preds = self.simple_test_pts(img_feats, img_metas, rescale=rescale)
         # for result_dict, pts_bbox,seg_pred in zip(bbox_list, bbox_pts,seg_preds):
