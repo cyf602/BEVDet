@@ -9,5 +9,5 @@ from .grid_mask import GridMask
 
 __all__ = [
     'clip_sigmoid', 'MLP', 'get_edge_indices', 'filter_outside_objs',
-    'handle_proj_objs', 'get_keypoints', 'GridMask'
+    'handle_proj_objs', 'get_keypoints', 'GridMask',
 ]

@@ -45,7 +45,7 @@ class EgoPoseDataset(Dataset):
             if 'scene_token' in info:
                 scene_name = info['scene_token']
             else:
-                scene_name = info['occ_path'].split('openocc_v2/')[-1].split('/')[0]
+                scene_name = info['occv2_path'].split('openocc_v2/')[-1].split('/')[0]
             return scene_name
         elif self.dataset_type == 'lightwheelocc':
             return info['scene_token']

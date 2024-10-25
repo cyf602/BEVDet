@@ -12,7 +12,8 @@ from ..core.bbox import Box3DMode, Coord3DMode, LiDARInstance3DBoxes
 from .builder import DATASETS
 from .custom_3d import Custom3DDataset
 from .pipelines import Compose
-
+from nuscenes.utils.geometry_utils import transform_matrix
+from nuscenes.eval.common.utils import  Quaternion,quaternion_yaw
 
 @DATASETS.register_module()
 class NuScenesDataset(Custom3DDataset):
@@ -208,6 +209,11 @@ class NuScenesDataset(Custom3DDataset):
         data_infos = data_infos[::self.load_interval]#[:100]
         self.metadata = data['metadata']
         self.version = self.metadata['version']
+        stamps=[data_info['timestamp']/1e6 for data_info in data_infos]
+        dstamps=[stamps[i+1]-stamps[i] for i in range(len(stamps)-1)]#time gap to next frame
+        dstamps.append(1e9)#最后一帧
+        for i,dstamp in enumerate(dstamps):
+            data_infos[i]['dstamp']=dstamp 
         return data_infos
 
     def get_data_info(self, index):
@@ -236,6 +242,8 @@ class NuScenesDataset(Custom3DDataset):
             pts_filename=info['lidar_path'],
             sweeps=info['sweeps'],
             timestamp=info['timestamp'] / 1e6,
+            e2g_translation=info['ego2global_translation'],
+            e2g_rotation=info['ego2global_rotation']
         )
         if 'ann_infos' in info:
             input_dict['ann_infos'] = info['ann_infos']
@@ -280,6 +288,8 @@ class NuScenesDataset(Custom3DDataset):
     def get_adj_info(self, info, index):
         info_adj_list = []
         adj_id_list = list(range(*self.multi_adj_frame_id_cfg))
+        # key_frame_trans=info['ego2global_translation']
+        # key_frame_yaw=quaternion_yaw(Quaternion(info['ego2global_rotation']))
         if self.stereo:
             assert self.multi_adj_frame_id_cfg[0] == 1
             assert self.multi_adj_frame_id_cfg[2] == 1
@@ -288,7 +298,10 @@ class NuScenesDataset(Custom3DDataset):
             select_id = max(index - select_id, 0)
             if not self.data_infos[select_id]['scene_token'] == info[
                     'scene_token']:
-                info_adj_list.append(info)
+                if info_adj_list:
+                    info_adj_list.append(info_adj_list[-1])
+                else:
+                    info_adj_list.append(info)
             else:
                 info_adj_list.append(self.data_infos[select_id])
         return info_adj_list

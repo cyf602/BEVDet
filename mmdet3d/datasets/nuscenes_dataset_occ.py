@@ -13,7 +13,8 @@ from .ray_metrics import process_one_sample, generate_lidar_rays,save_results
 from .builder import DATASETS
 from .nuscenes_dataset import NuScenesDataset
 from .occ_metrics import Metric_mIoU, Metric_FScore
-
+from nuscenes.utils.geometry_utils import transform_matrix
+from nuscenes.eval.common.utils import  Quaternion
 colors_map = np.array(
     [#此处类别有误
         [0,   0,   0, 255],  # 0 undefined
@@ -62,6 +63,7 @@ class NuScenesDatasetOccpancy(NuScenesDataset):
         input_dict = super(NuScenesDatasetOccpancy, self).get_data_info(index)
         # standard protocol modified from SECOND.Pytorch
         input_dict['occ_gt_path'] = self.data_infos[index]['occ_path']
+        # input_dict['occv2_gt_path'] = self.data_infos[index]['occ_path'].replace('gts','openocc_v2')
         input_dict['occv2_gt_path'] = self.data_infos[index]['occv2_path']
         return input_dict
 
@@ -114,10 +116,10 @@ class NuScenesDatasetOccpancy(NuScenesDataset):
     
 @DATASETS.register_module()
 class NuScenesDatasetOccpancyv2(NuScenesDatasetOccpancy):#for openoccv2
-    # def get_data_info(self, index):
-    #     input_dict = super(NuScenesDatasetOccpancyv2, self).get_data_info(index)
+    def load_annotations(self, ann_file):
+        data_infos=super(NuScenesDatasetOccpancyv2, self).load_annotations(ann_file)
+        return data_infos
         
-    #     return input_dict
     def get_data_info(self, index):
         """Get data info according to the given index.
 
@@ -140,7 +142,17 @@ class NuScenesDatasetOccpancyv2(NuScenesDatasetOccpancy):#for openoccv2
         input_dict = super(NuScenesDatasetOccpancyv2, self).get_data_info(index)
         # standard protocol modified from SECOND.Pytorch
         input_dict['occ_gt_path'] = self.data_infos[index]['occ_path']
+        # input_dict['occv2_gt_path'] = self.data_infos[index]['occ_path'].replace('gts','openocc_v2')
         input_dict['occv2_gt_path'] = self.data_infos[index]['occv2_path']
+        input_dict['dstamp']=self.data_infos[index]['dstamp']
+        # if input_dict['dstamp']<1:
+        #     input_dict['next_occv2_path']=self.data_infos[index+1]['occv2_path']
+        #     next_global2ego_mat=transform_matrix(translation=self.data_infos[index+1]['ego2global_translation'], rotation=Quaternion(self.data_infos[index+1]['ego2global_rotation']),inverse=True)
+        #     ego2global_mat=transform_matrix(translation=self.data_infos[index]['ego2global_translation'],rotation=Quaternion(self.data_infos[index]['ego2global_rotation']))
+        #     input_dict['ego2next_mat']=ego2global_mat@next_global2ego_mat
+        # else:
+        #     input_dict['next_occv2_path']=None
+        #     input_dict['ego2next_mat']=transform_matrix(translation=self.data_infos[index]['ego2global_translation'],rotation=Quaternion(self.data_infos[index]['ego2global_rotation']))#不为None避免报错
         return input_dict
     
     def evaluate_miou(self, occ_results, runner=None, show_dir=None, **eval_kwargs):
@@ -187,7 +199,8 @@ class NuScenesDatasetOccpancyv2(NuScenesDatasetOccpancy):#for openoccv2
             
             data_id = sample_tokens.index(token)
             info = self.data_infos[data_id]
-            assert data_id==i
+            # assert data_id==i
+            # occ_gt = np.load(info['occ_path'].replace('gts','openocc_v2')+'/labels.npz', allow_pickle=True)
             occ_gt = np.load(info['occv2_path']+'/labels.npz', allow_pickle=True)
             gt_semantics = occ_gt['semantics']
             gt_flow = occ_gt['flow']

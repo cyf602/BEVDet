@@ -1,16 +1,64 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from os import path as osp
-import time
+import shutil
+import time,tempfile
 from mmcv.runner import get_dist_info
 
 import mmcv
 import torch
+import torch.distributed as dist
+
 from mmcv.image import tensor2imgs
-from mmdet.apis.test import collect_results_cpu
+# from mmdet.apis.test import collect_results_cpu
 from mmdet3d.models import (Base3DDetector, Base3DSegmentor,
                             SingleStageMono3DDetector)
 
-
+def collect_results_cpu(result_part, size, tmpdir=None):
+    rank, world_size = get_dist_info()
+    # create a tmp dir if it is not specified
+    if tmpdir is None:
+        MAX_LEN = 512
+        # 32 is whitespace
+        dir_tensor = torch.full((MAX_LEN, ),
+                                32,
+                                dtype=torch.uint8,
+                                device='cuda')
+        if rank == 0:
+            mmcv.mkdir_or_exist('.dist_test')
+            tmpdir = tempfile.mkdtemp(dir='.dist_test')
+            tmpdir = torch.tensor(
+                bytearray(tmpdir.encode()), dtype=torch.uint8, device='cuda')
+            dir_tensor[:len(tmpdir)] = tmpdir
+        dist.broadcast(dir_tensor, 0)
+        tmpdir = dir_tensor.cpu().numpy().tobytes().decode().rstrip()
+    else:
+        mmcv.mkdir_or_exist(tmpdir)
+    # dump the part result to the dir
+    mmcv.dump(result_part, osp.join(tmpdir, f'part_{rank}.pkl'))
+    dist.barrier()
+    # collect all parts
+    if rank != 0:
+        return None
+    else:
+        # load results of all parts from tmp dir
+        part_list = []
+        for i in range(world_size):
+            part_file = osp.join(tmpdir, f'part_{i}.pkl')
+            part_list.append(mmcv.load(part_file))
+        # sort the results
+        ordered_results = []
+        '''
+        bacause we change the sample of the evaluation stage to make sure that each gpu will handle continuous sample,
+        '''
+        #for res in zip(*part_list):
+        for res in part_list:  ##???
+            ordered_results.extend(list(res))
+        # the dataloader may pad some samples
+        ordered_results = ordered_results[:size]
+        # remove tmp dir
+        shutil.rmtree(tmpdir)
+        return ordered_results
+    
 def single_gpu_test(model,
                     data_loader,
                     show=False,
@@ -131,7 +179,7 @@ def multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
             #         result[j]['ins_results'] = (
             #             bbox_results, encode_mask_results(mask_results))
 
-        results.append(result)#??
+            results.append(result)#??
 
         if rank == 0:
             batch_size = 1#len(result)
@@ -144,6 +192,52 @@ def multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
     else:
         results = collect_results_cpu(results, len(dataset), tmpdir)
     return results
+
+def collect_results_cpu(result_part, size, tmpdir=None):
+    rank, world_size = get_dist_info()
+    # create a tmp dir if it is not specified
+    if tmpdir is None:
+        MAX_LEN = 512
+        # 32 is whitespace
+        dir_tensor = torch.full((MAX_LEN, ),
+                                32,
+                                dtype=torch.uint8,
+                                device='cuda')
+        if rank == 0:
+            mmcv.mkdir_or_exist('.dist_test')
+            tmpdir = tempfile.mkdtemp(dir='.dist_test')
+            tmpdir = torch.tensor(
+                bytearray(tmpdir.encode()), dtype=torch.uint8, device='cuda')
+            dir_tensor[:len(tmpdir)] = tmpdir
+        dist.broadcast(dir_tensor, 0)
+        tmpdir = dir_tensor.cpu().numpy().tobytes().decode().rstrip()
+    else:
+        mmcv.mkdir_or_exist(tmpdir)
+    # dump the part result to the dir
+    mmcv.dump(result_part, osp.join(tmpdir, f'part_{rank}.pkl'))
+    dist.barrier()
+    # collect all parts
+    if rank != 0:
+        return None
+    else:
+        # load results of all parts from tmp dir
+        part_list = []
+        for i in range(world_size):
+            part_file = osp.join(tmpdir, f'part_{i}.pkl')
+            part_list.append(mmcv.load(part_file))
+        # sort the results
+        ordered_results = []
+        '''
+        bacause we change the sample of the evaluation stage to make sure that each gpu will handle continuous sample,
+        '''
+        for res in zip(*part_list):
+        # for res in part_list:  #wrong here
+            ordered_results.extend(list(res))
+        # the dataloader may pad some samples
+        ordered_results = ordered_results[:size]
+        # remove tmp dir
+        shutil.rmtree(tmpdir)
+        return ordered_results
 
 def collect_results_gpu(result_part, size):
     collect_results_cpu(result_part, size)

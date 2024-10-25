@@ -36,10 +36,11 @@ class BEVDet(CenterPoint):
             GridMask(True, True, rotate=1, offset=False, ratio=0.5, mode=1,
                      prob=0.7)
         self.img_view_transformer = builder.build_neck(img_view_transformer)
-        if img_bev_encoder_neck and img_bev_encoder_backbone:
+        if img_bev_encoder_backbone:
             self.img_bev_encoder_backbone = \
                 builder.build_backbone(img_bev_encoder_backbone)
-            self.img_bev_encoder_neck = builder.build_neck(img_bev_encoder_neck)
+            if img_bev_encoder_neck:
+                self.img_bev_encoder_neck = builder.build_neck(img_bev_encoder_neck)
 
     def image_encoder(self, img, stereo=False):
         imgs = img
@@ -639,8 +640,8 @@ class BEVStereo4D(BEVDepth4D):
                      intrins=intrin,
                      post_rots=post_rot,
                      post_trans=post_tran,
-                     frustum=self.img_view_transformer.cv_frustum.to(x),
-                     cv_downsample=4,
+                     frustum=self.img_view_transformer.cv_frustum.to(x),#[88,64,176,3]
+                     cv_downsample=4,#self.cv_downsample,
                      downsample=self.img_view_transformer.downsample,
                      grid_config=self.img_view_transformer.grid_config,
                      cv_feat_list=[feat_prev_iv, stereo_feat])

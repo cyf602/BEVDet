@@ -1,7 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from .compose import Compose
 from .dbsampler import DataBaseSampler
-from .formating import Collect3D, DefaultFormatBundle, DefaultFormatBundle3D
+from .formating import Collect3D, DefaultFormatBundle, DefaultFormatBundle3D, GetRelative
 from .loading import (LoadAnnotations3D, LoadAnnotations, BEVAug,BEVAugv2,
                       LoadImageFromFileMono3D, LoadMultiViewImageFromFiles,
                       LoadPointsFromDict, LoadPointsFromFile,
@@ -35,5 +35,5 @@ __all__ = [
     'LoadPointsFromDict', 'MultiViewWrapper', 'RandomRotate',
     'RangeLimitedRandomCrop', 'PrepareImageInputs', 'PointToMultiViewDepth',
     'LoadOccGTFromFile', 'ToEgo', 'VelocityAug', 'LoadAnnotations', 'BEVAug',
-    'PrepareImageInputsv2','BEVAugv2'
+    'PrepareImageInputsv2','BEVAugv2','GetRelative'
 ]

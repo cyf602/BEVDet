@@ -209,7 +209,8 @@ def _fill_trainval_infos(nusc,
                                          e2g_t, e2g_r_mat, cam)
             cam_info.update(cam_intrinsic=cam_intrinsic)
             info['cams'].update({cam: cam_info})
-
+        scene_record = nusc.get('scene', sample['scene_token'])
+        scene_name = scene_record['name']
         # obtain sweeps for a single key-frame
         sd_rec = nusc.get('sample_data', sample['data']['LIDAR_TOP'])
         sweeps = []
@@ -264,7 +265,8 @@ def _fill_trainval_infos(nusc,
             info['num_radar_pts'] = np.array(
                 [a['num_radar_pts'] for a in annotations])
             info['valid_flag'] = valid_flag
-
+        info['location']=nusc.get('log', nusc.get('scene', sample['scene_token'])['log_token'])['location']
+        info['scene_name']=scene_name
         if sample['scene_token'] in train_scenes:
             train_nusc_infos.append(info)
         else:
