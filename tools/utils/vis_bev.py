@@ -6,6 +6,7 @@ import mmcv
 from datetime import datetime
 now=datetime.now()
 time_str = now.strftime("%Y-%m-%d-%H:%M:%S")
+white_board=np.ones((200,200,3))*255
 colors_map=np.array([
             [0, 150, 245, 255],  # car                  blue
             [160, 32, 240, 255],  # truck                purple
@@ -98,24 +99,73 @@ def vis_occ(semantics, flows,use_minv_thr=True,v_max_thr=-1):
     # flow_occ_bev_v_vis=cv2.resize(flow_occ_bev_v_vis,(1024,1024))
     return occ_bev_vis,np.concatenate(v_vis_bases,axis=1),np.concatenate(v_vis_maxthrs,axis=1)
 
-def vis_bev_view(occ_preds,occ_gts,flow_preds,flow_gts,idx,save_root='/root/data/chuyunfeng/OccNet_/vis/bev_tiny'):
+def vis_bev_view(occ_preds=None,occ_gts=None,flow_preds=None,flow_gts=None,idx=0,
+                 flowmask=None,occmask=None,save_root='/root/data/chuyunfeng/OccNet_/vis/bev_tiny'):
     """
     occ_preds/occ_gts:[B,200,200,16] int
     low_preds/flow_gts:[B,200,200,16,2]
     """
     V_MAX_THR=-1
+    if occ_preds is None:
+        occ_preds=torch.zeros_like(occ_gts)
+    if flow_preds is None:
+        flow_preds=torch.zeros_like(flow_gts)
+    flowmask_pic=white_board.copy()
+    occmask_pic=white_board.copy()
+    if flowmask is not None:
+        flowmask=torch.sum(flowmask,dim=-1)[0,...]
+        flowmask=(flowmask>0).cpu().numpy()#.astype(np.uint8)
+        flowmask_pic[flowmask]=np.array([0,0,255])
+    flowmask_pic=cv2.resize(flowmask_pic,(1024,1024))
+    if occmask is not None:
+        occmask=torch.sum(occmask,dim=-1)[0,...]
+        occmask=(occmask>0).cpu().numpy()
+        occmask_pic[occmask]=np.array([255,0,0])
+    occmask_pic=cv2.resize(occmask_pic,(1024,1024))
     bs=occ_gts.shape[0]
     # v_max_thr=torch.max(flow_gts).item()
     occ_gt_vis,flow_gt_vis,flow_gt_vis_mthr=vis_occ(occ_gts[0],flow_gts[0])
     occ_preds_vis,flow_pred_vis,flow_pred_vis_mthr=vis_occ(occ_preds[0],flow_preds[0],v_max_thr=V_MAX_THR)
-    row1=np.concatenate([occ_gt_vis,flow_gt_vis],axis=1)
-    row2=np.concatenate([occ_preds_vis,flow_pred_vis],axis=1)
-    row3=np.concatenate([occ_gt_vis,flow_gt_vis_mthr],axis=1)
-    row4=np.concatenate([occ_preds_vis,flow_pred_vis_mthr],axis=1)
+    # row1=np.concatenate([occ_gt_vis,flow_gt_vis,flowmask_pic],axis=1)
+    # row2=np.concatenate([occ_preds_vis,flow_pred_vis,flowmask_pic],axis=1)
+    row3=np.concatenate([occmask_pic,occ_gt_vis,flow_gt_vis_mthr,flowmask_pic],axis=1)
+    row4=np.concatenate([occmask_pic,occ_preds_vis,flow_pred_vis_mthr,flowmask_pic],axis=1)
     # if row2.shape!=(1024,4096,3) or row1.shape!=(1024,4096,3):
     #     print("!!incorrect vis shape:",idx,"-",row1.shape,row2.shape)
-    final_image = np.concatenate([row1, row2,row3,row4], axis=0)
+    final_image = np.concatenate([row3,row4], axis=0)
     mmcv.imwrite(final_image, os.path.join(save_root+time_str,"%d_0.jpg" % idx))
     # mmcv.imwrite(row1, os.path.join(save_root+time_str,"%d_gt.jpg" % idx))
     # mmcv.imwrite(row2, os.path.join(save_root+time_str,"%d_pred.jpg" % idx))
-    pass    
+    pass   
+
+
+def vis_mask3d(occ_gt,mask,save_idx=0,pred_occ=None,
+               pred_flow=None,save_root='vis/vis3d'):
+    if not os.path.exists(save_root):
+        os.mkdir(save_root)
+    X,Y,Z=200,200,16
+    voxel_size=0.4
+    indices = np.indices((X, Y, Z))#[3,x,y,z]
+    indices=np.transpose(indices,(1,2,3,0))
+    indices=indices*voxel_size
+    outsave=f'{save_idx}_semgt_masknonfree.txt'
+    gtnonfree=(occ_gt!=16).cpu().numpy()
+    prnonfree=(pred_occ!=16).cpu().numpy()
+    mask=mask.cpu().numpy()
+    results = np.hstack((indices[mask*gtnonfree], occ_gt.cpu().numpy()[mask*gtnonfree][:, np.newaxis]))
+    np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
+    outsave=f'{save_idx}_semgt_mask.txt'
+    results = np.hstack((indices[mask], occ_gt.cpu().numpy()[mask][:, np.newaxis]))
+    np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
+    outsave=f'{save_idx}_sempr_nonfree.txt'
+    results = np.hstack((indices[prnonfree], pred_occ.cpu().numpy()[prnonfree][:, np.newaxis]))
+    np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
+    outsave=f'{save_idx}_semgt_nonfree.txt'
+    results = np.hstack((indices[gtnonfree], occ_gt.cpu().numpy()[gtnonfree][:, np.newaxis]))
+    np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
+    # outsave=f'{save_idx}_flowpr_nonfree.txt'
+    # results = np.hstack((indices[nonfree], pred_flow.cpu().numpy()[nonfree][:, np.newaxis]))
+    # np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
+    
+    
+    

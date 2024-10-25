@@ -1,13 +1,14 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import json
 from os import path as osp
-import shutil
-import torch.distributed as dist
-import tempfile
+import time,tempfile
+
 import mmcv
 import torch
+import torch.distributed as dist
+
 from mmcv.image import tensor2imgs
-import time
+import shutil
 from mmcv.runner import get_dist_info
 from mmdet3d.core.evaluation.seg_metric import IntersectionOverUnion
 # from mmdet.apis.test import collect_results_cpu

@@ -1,6 +1,7 @@
 import numpy as np
 import pickle
 import random
+import os
 from mmcv import dump
 from tqdm import tqdm
 flow_class_names = [
@@ -8,9 +9,11 @@ flow_class_names = [
     'bicycle', 'motorcycle', 'pedestrian',
 ]
 _voxel_size=0.4
-def convert2cloud(pkldata,length,output_root='test_results/clouds/1008/'):
+def convert2cloud(pkldata,length,output_root='test_results/clouds/1019/'):
     gtdata=pkldata['gt_dict']
     prdata=pkldata['pr_dict']
+    if not os.path.exists(output_root):
+        os.mkdir(output_root)
     for i in tqdm(range(length)):
         gt_coors=gtdata[i]['coord_indexs']
         pr_coors=prdata[i]['coord_indexs']
@@ -39,7 +42,7 @@ def convert2cloud(pkldata,length,output_root='test_results/clouds/1008/'):
         gt_sem_results=np.hstack((gt_coors[non_free_gt]*_voxel_size, gt_sem[non_free_gt][:, np.newaxis]))
         flow_gt_norm=np.hstack((gt_coors[final_mask]*_voxel_size, flow_gt_norm[:, np.newaxis]))
         flow_pr_norm=np.hstack((pr_coors[final_mask]*_voxel_size, flow_pr_norm[:, np.newaxis]))
-        np.savetxt(output_root+str(i)+'flow_error.txt', results, fmt='%.7f', delimiter=',', header='x,y,z,value', comments='')
+        np.savetxt(output_root+str(i)+'.txt', results, fmt='%.7f', delimiter=',', header='x,y,z,value', comments='')
         np.savetxt(output_root+str(i)+'gt_flow.txt', flow_gt_norm, fmt='%.7f', delimiter=',', header='x,y,z,value', comments='')
         np.savetxt(output_root+str(i)+'pr_flow.txt', flow_pr_norm, fmt='%.7f', delimiter=',', header='x,y,z,value', comments='')
         np.savetxt(output_root+str(i)+'pr_sem.txt', pr_sem_results, fmt='%.2f', delimiter=',', header='x,y,z,value', comments='')
@@ -60,7 +63,7 @@ def choose_few_data(pkldata):
             
 
 if __name__=="__main__":
-    pkl_path='test_results/resultckpt1008_epoch30.pkl'
+    pkl_path='test_results/result1019maskep28.pkl'
     choosedata=False
     with open(pkl_path,"rb") as f:
         pkldata=pickle.load(f)

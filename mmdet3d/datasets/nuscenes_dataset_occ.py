@@ -13,7 +13,8 @@ from .ray_metrics import process_one_sample, generate_lidar_rays,save_results
 from .builder import DATASETS
 from .nuscenes_dataset import NuScenesDataset
 from .occ_metrics import Metric_mIoU, Metric_FScore
-
+from nuscenes.utils.geometry_utils import transform_matrix
+from nuscenes.eval.common.utils import  Quaternion
 colors_map = np.array(
     [#此处类别有误
         [0,   0,   0, 255],  # 0 undefined
@@ -62,6 +63,7 @@ class NuScenesDatasetOccpancy(NuScenesDataset):
         input_dict = super(NuScenesDatasetOccpancy, self).get_data_info(index)
         # standard protocol modified from SECOND.Pytorch
         input_dict['occ_gt_path'] = self.data_infos[index]['occ_path']
+        # input_dict['occv2_gt_path'] = self.data_infos[index]['occ_path'].replace('gts','openocc_v2')
         input_dict['occv2_gt_path'] = self.data_infos[index]['occv2_path']
         return input_dict
 
@@ -114,10 +116,45 @@ class NuScenesDatasetOccpancy(NuScenesDataset):
     
 @DATASETS.register_module()
 class NuScenesDatasetOccpancyv2(NuScenesDatasetOccpancy):#for openoccv2
-    # def get_data_info(self, index):
-    #     input_dict = super(NuScenesDatasetOccpancyv2, self).get_data_info(index)
+    def load_annotations(self, ann_file):
+        data_infos=super(NuScenesDatasetOccpancyv2, self).load_annotations(ann_file)
+        return data_infos
         
+    # def get_data_info(self, index):
+    #     """Get data info according to the given index.
+
+    #     Args:
+    #         index (int): Index of the sample data to get.
+
+    #     Returns:
+    #         dict: Data information that will be passed to the data
+    #             preprocessing pipelines. It includes the following keys:
+
+    #             - sample_idx (str): Sample index.
+    #             - pts_filename (str): Filename of point clouds.
+    #             - sweeps (list[dict]): Infos of sweeps.
+    #             - timestamp (float): Sample timestamp.
+    #             - img_filename (str, optional): Image filename.
+    #             - lidar2img (list[np.ndarray], optional): Transformations
+    #                 from lidar to different cameras.
+    #             - ann_info (dict): Annotation info.
+    #     """
+    #     input_dict = super(NuScenesDatasetOccpancyv2, self).get_data_info(index)
+    #     # standard protocol modified from SECOND.Pytorch
+    #     input_dict['occ_gt_path'] = self.data_infos[index]['occ_path']
+    #     # input_dict['occv2_gt_path'] = self.data_infos[index]['occ_path'].replace('gts','openocc_v2')
+    #     input_dict['occv2_gt_path'] = self.data_infos[index]['occv2_path']
+    #     input_dict['dstamp']=self.data_infos[index]['dstamp']
+    #     # if input_dict['dstamp']<1:
+    #     #     input_dict['next_occv2_path']=self.data_infos[index+1]['occv2_path']
+    #     #     next_global2ego_mat=transform_matrix(translation=self.data_infos[index+1]['ego2global_translation'], rotation=Quaternion(self.data_infos[index+1]['ego2global_rotation']),inverse=True)
+    #     #     ego2global_mat=transform_matrix(translation=self.data_infos[index]['ego2global_translation'],rotation=Quaternion(self.data_infos[index]['ego2global_rotation']))
+    #     #     input_dict['ego2next_mat']=ego2global_mat@next_global2ego_mat
+    #     # else:
+    #     #     input_dict['next_occv2_path']=None
+    #     #     input_dict['ego2next_mat']=transform_matrix(translation=self.data_infos[index]['ego2global_translation'],rotation=Quaternion(self.data_infos[index]['ego2global_rotation']))#不为None避免报错
     #     return input_dict
+    
     def evaluate_miou(self, occ_results, runner=None, show_dir=None, **eval_kwargs):
         occ_gts = []
         flow_gts = []

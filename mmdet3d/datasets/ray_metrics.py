@@ -243,7 +243,7 @@ def calc_metrics(pcd_pred_list, pcd_gt_list):
                     flow_error = np.linalg.norm(gt_flow_i - pred_flow_i, axis=1)
                     ave[j][i] += np.sum(flow_error)#thr,cls
                     ave_count[j][i] += flow_error.shape[0]
-                else:
+                else:#直接计算gt前8类对应类别位置平均速度error
                     gt_flow_i = pcd_gt[pcd_gt[:,0]<8, 2:4]
                     pred_flow_i = pcd_pred[pcd_gt[:,0]<8, 2:4]
                     flow_error = np.linalg.norm(gt_flow_i - pred_flow_i, axis=1)

@@ -242,6 +242,11 @@ class NuScenesDataset(Custom3DDataset):
         data_infos = data_infos[::self.load_interval][:100]
         self.metadata = data['metadata']
         self.version = self.metadata['version']
+        stamps=[data_info['timestamp']/1e6 for data_info in data_infos]
+        dstamps=[stamps[i+1]-stamps[i] for i in range(len(stamps)-1)]#time gap to next frame
+        dstamps.append(1e9)#最后一帧
+        for i,dstamp in enumerate(dstamps):
+            data_infos[i]['dstamp']=dstamp 
         return data_infos
 
     def get_data_info(self, index):
@@ -327,6 +332,8 @@ class NuScenesDataset(Custom3DDataset):
     def get_adj_info(self, info, index):
         info_adj_list = []
         adj_id_list = list(range(*self.multi_adj_frame_id_cfg))
+        # key_frame_trans=info['ego2global_translation']
+        # key_frame_yaw=quaternion_yaw(Quaternion(info['ego2global_rotation']))
         if self.stereo:
             assert self.multi_adj_frame_id_cfg[0] == 1
             assert self.multi_adj_frame_id_cfg[2] == 1

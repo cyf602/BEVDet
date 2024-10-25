@@ -55,7 +55,7 @@ class LoadTempOccGTFromFile(object):
         else:
             raise ValueError('LoadOccGTFromFile: Occupancy GT load error!')
 
-        if results.get('next_occ_path') is not None:
+        if False:#results.get('next_occ_path') is not None:
             nextocc_labels=np.load(results['next_occ_path'])
             results['next_voxel_semantics']=nextocc_labels['semantics']
         else:
@@ -76,11 +76,15 @@ class LoadOccGTFromFilev2(LoadTempOccGTFromFile):
         occ_gt_path = results['occv2_gt_path']
         occ_gt_path = os.path.join(occ_gt_path, "labels.npz")
         occ_labels = np.load(occ_gt_path)
-        semantics = occ_labels['semantics']#[200,200,16]
-        results['voxel_semantics'] = semantics        
-        flow = occ_labels['flow']
-        results['voxel_flow']=flow
+        results['voxel_semantics'] = occ_labels['semantics']#[200,200,16]        
+        results['voxel_flow']=occ_labels['flow']
         results['vismask']=occ_labels['vismask']
+        next_occgt_path=results.get('next_occv2_path',None)
+        if next_occgt_path:
+            occ_next_gt_path = os.path.join(next_occgt_path, "labels.npz")
+            results['next_voxel_semantics']=np.load(occ_next_gt_path)['semantics']
+        else:
+            results['next_voxel_semantics']=16*np.ones_like(occ_labels['semantics'])
         return results     
     
 @PIPELINES.register_module()

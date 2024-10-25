@@ -614,13 +614,13 @@ class DepthNet(nn.Module):
         return grid
 
     def calculate_cost_volumn(self, metas):
-        prev, curr = metas['cv_feat_list']
+        prev, curr = metas['cv_feat_list']#[N,256,h64,w176]
         group_size = 4
         _, c, hf, wf = curr.shape
         hi, wi = hf * 4, wf * 4
         B, N, _ = metas['post_trans'].shape
         D, H, W, _ = metas['frustum'].shape
-        grid = self.gen_grid(metas, B, N, D, H, W, hi, wi).to(curr.dtype)
+        grid = self.gen_grid(metas, B, N, D, H, W, hi, wi).to(curr.dtype)#[N,D*H,W176,2]
 
         prev = prev.view(B * N, -1, H, W)
         curr = curr.view(B * N, -1, H, W)
@@ -635,7 +635,7 @@ class DepthNet(nn.Module):
             cost_volumn_tmp = curr_tmp.unsqueeze(2) - \
                               wrap_prev.view(B * N, -1, D, H, W)
             cost_volumn_tmp = cost_volumn_tmp.abs().sum(dim=1)
-            cost_volumn += cost_volumn_tmp
+            cost_volumn += cost_volumn_tmp#N,D,64,176
         if not self.bias == 0:
             invalid = wrap_prev[:, 0, ...].view(B * N, D, H, W) == 0
             cost_volumn[invalid] = cost_volumn[invalid] + self.bias
@@ -845,8 +845,8 @@ class LSSViewTransformerBEVDepth(LSSViewTransformer):
 @NECKS.register_module()
 class LSSViewTransformerBEVStereo(LSSViewTransformerBEVDepth):
 
-    def __init__(self,  **kwargs):
+    def __init__(self,  cv_downsample=4,**kwargs):
         super(LSSViewTransformerBEVStereo, self).__init__(**kwargs)
         self.cv_frustum = self.create_frustum(kwargs['grid_config']['depth'],
                                               kwargs['input_size'],
-                                              downsample=4)
+                                              downsample=cv_downsample)
