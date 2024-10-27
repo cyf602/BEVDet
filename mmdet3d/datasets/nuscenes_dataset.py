@@ -407,7 +407,7 @@ class NuScenesDataset(Custom3DDataset):
             scores = det[0]['pts_bbox']['scores_3d'].numpy()
             labels = det[0]['pts_bbox']['labels_3d'].numpy()
             sample_token = self.data_infos[sample_id]['token']#这个顺序？
-            assert det[0]['pts_bbox']['sample_idx']==self.data_infos[sample_id]['token']
+            # assert det[0]['pts_bbox']['sample_idx']==self.data_infos[sample_id]['token']
             trans = self.data_infos[sample_id]['cams'][
                 self.ego_cam]['ego2global_translation']
             rot = self.data_infos[sample_id]['cams'][

@@ -214,7 +214,7 @@ def train_detector(model,
             # `num_gpus` will be ignored if distributed
             num_gpus=len(cfg.gpu_ids),
             dist=distributed,
-            shuffle=cfg.data.shuffle,
+            shuffle=cfg.data.get('shuffle',True),
             seed=cfg.seed,
             shuffler_sampler=cfg.data.get('shuffler_sampler',None),  # dict(type='DistributedGroupSampler'),
             nonshuffler_sampler=cfg.data.get('nonshuffler_sampler',None),  # dict(type='DistributedSampler'),

@@ -74,7 +74,7 @@ data_config = {
     'resize_test': 0.00,
 }
 num_epochs=20
-batch_size=2
+batch_size=4
 num_gpus=4
 # num_iters_per_epoch = 123584 // (num_gpus * batch_size)#cgbs
 num_iters_per_epoch = 28130 // (num_gpus * batch_size)
@@ -194,7 +194,7 @@ model = dict(
             post_center_range=[-61.2, -61.2, -10.0, 61.2, 61.2, 10.0],
             max_num=500,
             score_threshold=0.1,
-            out_size_factor=8,
+            out_size_factor=10*grid_config['x'][2],
             voxel_size=voxel_size[:2],
             code_size=9),
         separate_head=dict(
@@ -231,7 +231,7 @@ model = dict(
             max_pool_nms=False,
             min_radius=[4, 12, 10, 1, 0.85, 0.175],
             score_threshold=0.1,
-            out_size_factor=8,
+            out_size_factor=10*grid_config['x'][2],
             voxel_size=voxel_size[:2],
             pre_max_size=1000,
             post_max_size=500,
@@ -375,11 +375,12 @@ data = dict(
     shuffler_sampler=dict(
         type='InfiniteGroupEachSampleInBatchSampler',
         seq_split_num=2,
-        num_iters_to_seq=100,#1*num_iters_per_epoch,
+        num_iters_to_seq=1*num_iters_per_epoch,
         random_drop=0.0,
         cbgs=True
     ),
-    nonshuffler_sampler=dict(type='DistributedSampler'))
+    nonshuffler_sampler=dict(type='DistributedSampler')
+)
 
 for key in ['val', 'test']:
     data[key].update(share_data_config)
@@ -397,7 +398,7 @@ lr_config = dict(
 # runner = dict(type='EpochBasedRunner', max_epochs=20)
 runner = dict(type='IterBasedRunner', max_iters=num_epochs * num_iters_per_epoch)
 # evaluation = dict(interval=1, pipeline=test_pipeline)
-evaluation = dict(interval=100)
+evaluation = dict(interval=num_iters_per_epoch)
 checkpoint_config = dict(interval=num_iters_per_epoch)
 custom_hooks = [
     # dict(

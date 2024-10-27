@@ -294,7 +294,16 @@ data = dict(
         # and box_type_3d='Depth' in sunrgbd and scannet dataset.
         box_type_3d='LiDAR')),
     val=test_data_config,
-    test=test_data_config)
+    test=test_data_config,
+    # shuffler_sampler=dict(
+    #     type='InfiniteGroupEachSampleInBatchSampler',
+    #     seq_split_num=2,
+    #     num_iters_to_seq=100,#1*num_iters_per_epoch,
+    #     random_drop=0.0,
+    #     cbgs=True
+    # ),
+    # nonshuffler_sampler=dict(type='DistributedSampler')
+    )
 
 for key in ['val', 'test']:
     data[key].update(share_data_config)
@@ -310,7 +319,9 @@ lr_config = dict(
     warmup_ratio=0.001,
     step=[20,])
 runner = dict(type='EpochBasedRunner', max_epochs=20)
+# runner = dict(type='IterBasedRunner', max_iters=100000)#无关
 evaluation = dict(interval=1, pipeline=test_pipeline)
+# evaluation = dict(interval=1750, pipeline=test_pipeline)
 
 custom_hooks = [
     # dict(

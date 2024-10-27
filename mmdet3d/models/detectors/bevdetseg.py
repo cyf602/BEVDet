@@ -134,7 +134,7 @@ class BEVDepth4D_Multitask(BEVDepth4D):
         img_feats, pts_feats, depth = self.extract_feat(#l=0[B,256,h,w]
             points, img=img_inputs, img_metas=img_metas, **kwargs)
         # if img_feats[0].device==torch.device('cuda:0'):
-        #     print(img_metas[0]['scene_name'])
+        #     print(img_feats[0].device,img_metas[0]['scene_name'])
         if self.streaming_bev:
             self.bev_memory.train()#[B,256,bevw,bevh]
             img_feats = [self.update_bev_feature(img_feats[0], img_metas)]
@@ -226,6 +226,8 @@ class BEVDepth4D_Multitask(BEVDepth4D):
                 bbox3d2result(bboxes, scores, labels)
                 for bboxes, scores, labels in bbox_list
             ]
+            # bbox_results[0]['sample_idx']=img_metas[0]['sample_idx']
+            # bbox_results[0]['idx']=img_metas[0]['idx']
         else:
             bbox_results=None
         if 'seg_pred' in outs[0][0].keys():

@@ -173,7 +173,7 @@ def multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
             semantic_map_iou_val(pred_semantic_indices,
                                  target_semantic_indices)
         results.append(result)#??
-
+        # results.extend(result)# stream petr
         if rank == 0:
             batch_size = 1#len(result)
             for _ in range(batch_size * world_size):
@@ -210,8 +210,7 @@ def multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
         results = collect_results_cpu(results, len(dataset), tmpdir)
     return results
 
-def collect_results_gpu(result_part, size):
-    collect_results_cpu(result_part, size)
+
     
 def collect_results_cpu(result_part, size, tmpdir=None):
     rank, world_size = get_dist_info()
@@ -247,10 +246,17 @@ def collect_results_cpu(result_part, size, tmpdir=None):
             part_list.append(mmcv.load(part_file))
         # sort the results
         ordered_results = []
-        for res in part_list:#各gpu处理数据可能不一样多，各part间顺序
-            ordered_results.extend(list(res))#
+        '''
+        bacause we change the sample of the evaluation stage to make sure that each gpu will handle continuous sample,
+        '''
+        #for res in zip(*part_list):
+        for res in part_list:  #各gpu处理数据可能不一样多，各part间顺序
+            ordered_results.extend(list(res))
         # the dataloader may pad some samples
         ordered_results = ordered_results[:size]#6019
         # remove tmp dir
         shutil.rmtree(tmpdir)
-        return ordered_results#无sample idx
+        return ordered_results
+    
+def collect_results_gpu(result_part, size):
+    collect_results_cpu(result_part, size)
