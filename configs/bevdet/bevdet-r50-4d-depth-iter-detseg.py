@@ -73,7 +73,13 @@ data_config = {
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-batch_size=4
+num_epochs=20
+batch_size=2
+num_gpus=4
+# num_iters_per_epoch = 123584 // (num_gpus * batch_size)#cgbs
+num_iters_per_epoch = 28130 // (num_gpus * batch_size)
+# num_iters_per_epoch = 101 // (num_gpus * batch_size)
+total_iters= num_epochs * num_iters_per_epoch
 bev_embed_dims=256
 # Model
 grid_config = {
@@ -141,20 +147,20 @@ model = dict(
         num_channels=[numC_Trans,],
         stride=[1,],
         backbone_output_ids=[0,]),
-    # streaming_cfg=dict(
-    #     streaming_bev=True,
-    #     batch_size=batch_size,
-    #     fusion_cfg=dict(
-    #         type='ConvGRU',
-    #         out_channels=bev_embed_dims,
-    #     )
-    # ),
+    streaming_cfg=dict(
+        streaming_bev=True,
+        batch_size=batch_size,
+        fusion_cfg=dict(
+            type='ConvGRU',
+            out_channels=bev_embed_dims,
+        )
+    ),
     pts_bbox_head=dict(
         type='CenterHeadDetSeg',
         grid_config=grid_config,
         map_grid_conf=map_grid_conf,
         in_channels=256,
-        pred_det=False,
+        pred_det=True,
         pred_seg=True,
         pred_vec=False,
         loss_seg=dict(
@@ -308,7 +314,7 @@ test_pipeline = [
                 class_names=class_names,
                 with_label=False),
             dict(type='Collect3D', keys=['points', 'img_inputs','semantic_indices'],
-                 meta_keys=('scene_name','e2g_mat','box_mode_3d','box_type_3d','sample_idx'))
+                 meta_keys=('scene_name','e2g_mat','box_mode_3d','box_type_3d'))
         ])
 ]
 
@@ -338,21 +344,9 @@ data = dict(
     samples_per_gpu=batch_size,
     workers_per_gpu=4,
     shuffle=True,
-    train=dict(
-        type='CBGSDataset',
-        dataset=dict(
-        data_root=data_root,
-        ann_file=data_root + 'bevdetv3-nuscenes_infos_train.pkl',
-        pipeline=train_pipeline,
-        classes=class_names,
-        test_mode=False,
-        use_valid_flag=True,
-        grid_conf=map_grid_conf,
-        # we use box_type_3d='LiDAR' in kitti and nuscenes dataset
-        # and box_type_3d='Depth' in sunrgbd and scannet dataset.
-        box_type_3d='LiDAR')),
     # train=dict(
-    #     type='NuScenesDataset',#'CBGSDataset',    
+    #     type='CBGSDataset',
+    #     dataset=dict(
     #     data_root=data_root,
     #     ann_file=data_root + 'bevdetv3-nuscenes_infos_train.pkl',
     #     pipeline=train_pipeline,
@@ -362,14 +356,35 @@ data = dict(
     #     grid_conf=map_grid_conf,
     #     # we use box_type_3d='LiDAR' in kitti and nuscenes dataset
     #     # and box_type_3d='Depth' in sunrgbd and scannet dataset.
-    #     box_type_3d='LiDAR'),
+    #     box_type_3d='LiDAR')),
+    train=dict(
+        type='NuScenesDataset',#'CBGSDataset',    
+        data_root=data_root,
+        ann_file=data_root + 'bevdetv3-nuscenes_infos_train.pkl',
+        pipeline=train_pipeline,
+        classes=class_names,
+        test_mode=False,
+        use_valid_flag=True,
+        grid_conf=map_grid_conf,
+        seq_split_num=1,
+        # we use box_type_3d='LiDAR' in kitti and nuscenes dataset
+        # and box_type_3d='Depth' in sunrgbd and scannet dataset.
+        box_type_3d='LiDAR'),
     val=test_data_config,
-    test=test_data_config)
+    test=test_data_config,
+    shuffler_sampler=dict(
+        type='InfiniteGroupEachSampleInBatchSampler',
+        seq_split_num=2,
+        num_iters_to_seq=100,#1*num_iters_per_epoch,
+        random_drop=0.0,
+        cbgs=True
+    ),
+    nonshuffler_sampler=dict(type='DistributedSampler'))
 
 for key in ['val', 'test']:
     data[key].update(share_data_config)
-# data['train'].update(share_data_config)
-data['train']['dataset'].update(share_data_config)
+data['train'].update(share_data_config)
+# data['train']['dataset'].update(share_data_config)
 # Optimizer
 optimizer = dict(type='AdamW', lr=2e-4, weight_decay=1e-2)
 optimizer_config = dict(grad_clip=dict(max_norm=5, norm_type=2))
@@ -379,9 +394,11 @@ lr_config = dict(
     warmup_iters=200,
     warmup_ratio=0.001,
     step=[20,])
-runner = dict(type='EpochBasedRunner', max_epochs=20)
-evaluation = dict(interval=1, pipeline=test_pipeline)
-
+# runner = dict(type='EpochBasedRunner', max_epochs=20)
+runner = dict(type='IterBasedRunner', max_iters=num_epochs * num_iters_per_epoch)
+# evaluation = dict(interval=1, pipeline=test_pipeline)
+evaluation = dict(interval=100)
+checkpoint_config = dict(interval=num_iters_per_epoch)
 custom_hooks = [
     # dict(
     #     type='MEGVIIEMAHook',

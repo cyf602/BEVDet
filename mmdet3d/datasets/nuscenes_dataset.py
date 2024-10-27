@@ -142,6 +142,7 @@ class NuScenesDataset(Custom3DDataset):
                  multi_adj_frame_id_cfg=None,
                  ego_cam='CAM_FRONT',
                  grid_conf=None,
+                 seq_split_num=1,
                  stereo=False):
         self.load_interval = load_interval
         self.use_valid_flag = use_valid_flag
@@ -187,6 +188,9 @@ class NuScenesDataset(Custom3DDataset):
                 patch_size=self.map_patch_size,
                 canvas_size=self.map_canvas_size,
             )
+        self.seq_split_num = seq_split_num
+        if seq_split_num>0:
+            self._set_sequence_group_flag()
 
     def get_cat_ids(self, idx):
         """Get category distribution of single scene.
@@ -223,7 +227,7 @@ class NuScenesDataset(Custom3DDataset):
         """
         data = mmcv.load(ann_file, file_format='pkl')
         data_infos = list(sorted(data['infos'], key=lambda e: e['timestamp']))
-        data_infos = data_infos[::self.load_interval]#[:101]
+        data_infos = data_infos[::self.load_interval]#[:500]
         self.metadata = data['metadata']
         self.version = self.metadata['version']
         return data_infos
@@ -254,7 +258,8 @@ class NuScenesDataset(Custom3DDataset):
             pts_filename=info['lidar_path'],
             sweeps=info['sweeps'],
             timestamp=info['timestamp'] / 1e6,
-            scene_name=info['scene_name']
+            scene_name=info['scene_name'],
+            idx=index
         )
         if hasattr(self, 'vector_map'):
             input_dict['vectors'] = self.get_map_ann_info(info)
@@ -401,8 +406,8 @@ class NuScenesDataset(Custom3DDataset):
             boxes = det[0]['pts_bbox']['boxes_3d'].tensor.numpy()#det['boxes_3d'].tensor.numpy()
             scores = det[0]['pts_bbox']['scores_3d'].numpy()
             labels = det[0]['pts_bbox']['labels_3d'].numpy()
-            sample_token = self.data_infos[sample_id]['token']
-
+            sample_token = self.data_infos[sample_id]['token']#这个顺序？
+            assert det[0]['pts_bbox']['sample_idx']==self.data_infos[sample_id]['token']
             trans = self.data_infos[sample_id]['cams'][
                 self.ego_cam]['ego2global_translation']
             rot = self.data_infos[sample_id]['cams'][
@@ -468,6 +473,49 @@ class NuScenesDataset(Custom3DDataset):
         mmcv.dump(nusc_submissions, res_path)
         return res_path
 
+    def _set_sequence_group_flag(self):
+        """
+        Set each sequence to be a different group
+        """
+        if self.seq_split_num == -1:
+            self.flag = np.arange(len(self.data_infos))
+            return
+        
+        res = []
+        cur_scene_name=""
+        curr_sequence = -1
+        for idx in range(len(self.data_infos)):
+            if self.data_infos[idx]['scene_name'] != cur_scene_name:
+                # new sequence
+                curr_sequence += 1
+                cur_scene_name=self.data_infos[idx]['scene_name']
+            res.append(curr_sequence)
+
+        self.flag = np.array(res, dtype=np.int64)
+
+        if self.seq_split_num != 1:#1
+            bin_counts = np.bincount(self.flag)
+            new_flags = []
+            curr_new_flag = 0
+            for curr_flag in range(len(bin_counts)):
+                seq_length = int(round(bin_counts[curr_flag] / self.seq_split_num))
+                curr_sequence_length = list(range(0, bin_counts[curr_flag], seq_length)) + [bin_counts[curr_flag]]
+                
+                # if left one sample, put it into the last sequence
+                if curr_sequence_length[-1] - curr_sequence_length[-2] <= 1:
+                    curr_sequence_length = curr_sequence_length[:-2] + [curr_sequence_length[-1]]
+                
+                curr_sequence_length = np.array(curr_sequence_length)
+
+                for sub_seq_idx in (curr_sequence_length[1:] - curr_sequence_length[:-1]):
+                    for _ in range(sub_seq_idx):
+                        new_flags.append(curr_new_flag)
+                    curr_new_flag += 1
+
+            assert len(new_flags) == len(self.flag)
+            # assert len(np.bincount(new_flags)) == len(np.bincount(self.flag)) * self.seq_split_num
+            self.flag = np.array(new_flags, dtype=np.int64)
+            
     def _evaluate_single(self,
                          result_path,
                          logger=None,

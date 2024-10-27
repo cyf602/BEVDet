@@ -1,18 +1,23 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import json
 from os import path as osp
-
+import shutil
+import torch.distributed as dist
+import tempfile
 import mmcv
 import torch
 from mmcv.image import tensor2imgs
-from mmdet.apis.test import collect_results_cpu
 import time
 from mmcv.runner import get_dist_info
 from mmdet3d.core.evaluation.seg_metric import IntersectionOverUnion
 from mmdet3d.models import (Base3DDetector, Base3DSegmentor,
                             SingleStageMono3DDetector)
 from mmdet3d.utils.logger import get_root_logger
-
+from datetime import datetime
+now=datetime.now()
+time_str = now.strftime("%Y-%m-%d-%H:%M:%S")
+save_root="work_dirs/evaluation_results/"
+savepath=save_root+"segonly"+time_str+".json"
 
 def single_gpu_test(model,
                     data_loader,
@@ -195,7 +200,7 @@ def multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
                 mIoU=round(mIoU.cpu().numpy().item(), 4)
             )
             print("seg_evaluate results:",seg_dict)
-            with open('segmentation_result.json', 'a') as f:
+            with open(savepath, 'a') as f:
                 f.write(json.dumps(str(seg_dict)) + '\n')
                 
     # collect results from all ranks
@@ -207,3 +212,45 @@ def multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
 
 def collect_results_gpu(result_part, size):
     collect_results_cpu(result_part, size)
+    
+def collect_results_cpu(result_part, size, tmpdir=None):
+    rank, world_size = get_dist_info()
+    # create a tmp dir if it is not specified
+    if tmpdir is None:
+        MAX_LEN = 512
+        # 32 is whitespace
+        dir_tensor = torch.full((MAX_LEN, ),
+                                32,
+                                dtype=torch.uint8,
+                                device='cuda')
+        if rank == 0:
+            mmcv.mkdir_or_exist('.dist_test')
+            tmpdir = tempfile.mkdtemp(dir='.dist_test')
+            tmpdir = torch.tensor(
+                bytearray(tmpdir.encode()), dtype=torch.uint8, device='cuda')
+            dir_tensor[:len(tmpdir)] = tmpdir
+        dist.broadcast(dir_tensor, 0)
+        tmpdir = dir_tensor.cpu().numpy().tobytes().decode().rstrip()
+    else:
+        mmcv.mkdir_or_exist(tmpdir)
+    # dump the part result to the dir
+    mmcv.dump(result_part, osp.join(tmpdir, f'part_{rank}.pkl'))
+    dist.barrier()
+    # collect all parts
+    if rank != 0:
+        return None
+    else:
+        # load results of all parts from tmp dir
+        part_list = []
+        for i in range(world_size):
+            part_file = osp.join(tmpdir, f'part_{i}.pkl')
+            part_list.append(mmcv.load(part_file))
+        # sort the results
+        ordered_results = []
+        for res in part_list:#各gpu处理数据可能不一样多，各part间顺序
+            ordered_results.extend(list(res))#
+        # the dataloader may pad some samples
+        ordered_results = ordered_results[:size]#6019
+        # remove tmp dir
+        shutil.rmtree(tmpdir)
+        return ordered_results#无sample idx

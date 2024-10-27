@@ -16,7 +16,8 @@ from mmdet3d.datasets import build_dataset
 from mmdet3d.utils import find_latest_checkpoint
 from mmdet.core import DistEvalHook as MMDET_DistEvalHook
 from mmdet.core import EvalHook as MMDET_EvalHook
-from mmdet.datasets import build_dataloader as build_mmdet_dataloader
+# from mmdet.datasets import build_dataloader as build_mmdet_dataloader
+from mmdet3d.datasets.builder import build_dataloader as custom_build_dataloader
 from mmdet.datasets import replace_ImageToTensor
 from mmdet.utils import get_root_logger as get_mmdet_root_logger
 from mmseg.core import DistEvalHook as MMSEG_DistEvalHook
@@ -206,7 +207,7 @@ def train_detector(model,
     runner_type = 'EpochBasedRunner' if 'runner' not in cfg else cfg.runner[
         'type']
     data_loaders = [
-        build_mmdet_dataloader(
+        custom_build_dataloader(
             ds,
             cfg.data.samples_per_gpu,
             cfg.data.workers_per_gpu,
@@ -215,6 +216,8 @@ def train_detector(model,
             dist=distributed,
             shuffle=cfg.data.shuffle,
             seed=cfg.seed,
+            shuffler_sampler=cfg.data.get('shuffler_sampler',None),  # dict(type='DistributedGroupSampler'),
+            nonshuffler_sampler=cfg.data.get('nonshuffler_sampler',None),  # dict(type='DistributedSampler'),
             runner_type=runner_type,
             persistent_workers=cfg.data.get('persistent_workers', False))
         for ds in dataset
@@ -293,7 +296,7 @@ def train_detector(model,
             cfg.data.val.pipeline = replace_ImageToTensor(
                 cfg.data.val.pipeline)
         val_dataset = build_dataset(cfg.data.val, dict(test_mode=True))
-        val_dataloader = build_mmdet_dataloader(
+        val_dataloader = custom_build_dataloader(
             val_dataset,
             samples_per_gpu=val_samples_per_gpu,
             workers_per_gpu=cfg.data.workers_per_gpu,

@@ -38,10 +38,10 @@ class CBGSDataset(object):
         """
         class_sample_idxs = {cat_id: [] for cat_id in self.cat2id.values()}
         for idx in range(len(self.dataset)):
-            sample_cat_ids = self.dataset.get_cat_ids(idx)
+            sample_cat_ids = self.dataset.get_cat_ids(idx)#出现过的类别编号
             for cat_id in sample_cat_ids:
-                class_sample_idxs[cat_id].append(idx)
-        duplicated_samples = sum(
+                class_sample_idxs[cat_id].append(idx)#各类出现的sample idx
+        duplicated_samples = sum(#sample出现总次数
             [len(v) for _, v in class_sample_idxs.items()])
         class_distribution = {#各类出现的sample占总出现次数的比例 sum=1
             k: len(v) / duplicated_samples
@@ -51,11 +51,11 @@ class CBGSDataset(object):
         sample_indices = []
 
         frac = 1.0 / len(self.CLASSES)
-        ratios = [frac / max(v,1e-6) for v in class_distribution.values()]#sum>1 ~13
+        ratios = [frac / max(v,1e-6) for v in class_distribution.values()]#sum>1 ~13 各类别的某种权重
         for cls_inds, ratio in zip(list(class_sample_idxs.values()), ratios):#每个类出现的sampleid
             sample_indices += np.random.choice(cls_inds,#在每类出现样本中选取一定比例的sample组成新数据
                                                int(len(cls_inds) *
-                                                   ratio)).tolist()
+                                                   ratio)).tolist()#list,选的数量
         return sample_indices
 
     def __getitem__(self, idx):
