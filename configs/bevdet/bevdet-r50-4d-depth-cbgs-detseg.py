@@ -73,7 +73,7 @@ data_config = {
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-batch_size=1
+batch_size=4
 bev_embed_dims=256
 # Model
 grid_config = {
@@ -308,7 +308,7 @@ test_pipeline = [
                 class_names=class_names,
                 with_label=False),
             dict(type='Collect3D', keys=['points', 'img_inputs','semantic_indices'],
-                 meta_keys=('scene_name','e2g_mat'))
+                 meta_keys=('scene_name','e2g_mat','box_mode_3d','box_type_3d','sample_idx'))
         ])
 ]
 

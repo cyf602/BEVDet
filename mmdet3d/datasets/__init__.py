@@ -30,6 +30,7 @@ from .semantickitti_dataset import SemanticKITTIDataset
 from .sunrgbd_dataset import SUNRGBDDataset
 from .utils import get_loading_pipeline
 from .waymo_dataset import WaymoDataset
+from .samplers import InfiniteGroupEachSampleInBatchSampler,DistributedSampler
 
 __all__ = [
     'KittiDataset', 'KittiMonoDataset', 'build_dataloader', 'DATASETS',
@@ -46,5 +47,5 @@ __all__ = [
     'RandomJitterPoints', 'ObjectNameFilter', 'AffineResize',
     'RandomShiftScale', 'LoadPointsFromDict', 'PIPELINES',
     'RangeLimitedRandomCrop', 'RandomRotate', 'MultiViewWrapper',
-    'NuScenesDatasetOccpancy'
+    'NuScenesDatasetOccpancy','InfiniteGroupEachSampleInBatchSampler','DistributedSampler'
 ]

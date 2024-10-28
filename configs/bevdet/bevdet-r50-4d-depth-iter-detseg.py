@@ -73,15 +73,27 @@ data_config = {
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-
+num_epochs=20
+batch_size=4
+num_gpus=4
+# num_iters_per_epoch = 123584 // (num_gpus * batch_size)#cgbs
+num_iters_per_epoch = 28130 // (num_gpus * batch_size)
+# num_iters_per_epoch = 101 // (num_gpus * batch_size)
+total_iters= num_epochs * num_iters_per_epoch
+bev_embed_dims=256
 # Model
 grid_config = {
-    'x': [-51.2, 51.2, 0.8],
-    'y': [-51.2, 51.2, 0.8],
+    'x': [-51.2, 51.2, 0.64],#分辨率要是8的倍数（bev fpn)
+    'y': [-51.2, 51.2, 0.64],
     'z': [-5, 3, 8],
     'depth': [1.0, 60.0, 0.5],
 }
-
+map_grid_conf = {
+    'xbound': [-30.0, 30.0, 0.15],
+    'ybound': [-15.0, 15.0, 0.15],
+    'zbound': [-5.0,3.0,8.0],#[-10.0, 10.0, 20.0],
+    'dbound': [1.0, 60.0, 0.5],
+}
 voxel_size = [0.1, 0.1, 0.2]
 
 numC_Trans = 80
@@ -89,9 +101,11 @@ numC_Trans = 80
 multi_adj_frame_id_cfg = (1, 1+1, 1)
 
 model = dict(
-    type='BEVDepth4D',
+    type='BEVDepth4D_Multitask',
     align_after_view_transfromation=False,
     num_adj=len(range(*multi_adj_frame_id_cfg)),
+    map_grid_conf=map_grid_conf,
+    grid_conf=grid_config,
     img_backbone=dict(
         pretrained='torchvision://resnet50',
         type='ResNet',
@@ -133,9 +147,36 @@ model = dict(
         num_channels=[numC_Trans,],
         stride=[1,],
         backbone_output_ids=[0,]),
+    streaming_cfg=dict(
+        streaming_bev=True,
+        batch_size=batch_size,
+        fusion_cfg=dict(
+            type='ConvGRU',
+            out_channels=bev_embed_dims,
+        )
+    ),
     pts_bbox_head=dict(
-        type='CenterHead',
+        type='CenterHeadDetSeg',
+        grid_config=grid_config,
+        map_grid_conf=map_grid_conf,
         in_channels=256,
+        pred_det=True,
+        pred_seg=True,
+        pred_vec=False,
+        loss_seg=dict(
+                type='CrossEntropyLoss',
+                use_sigmoid=False,
+                loss_weight=3.0,
+                class_weight=[0.3, 2.0, 2.0, 2.0]),#0.3
+        seg_dncoder=dict(
+            type='SegEncode',
+            inC=256,
+            outC=4,
+            loss_seg=dict(#
+                type='CrossEntropyLoss',
+                use_sigmoid=False,
+                loss_weight=3.0,
+                class_weight=[0.3, 2.0, 2.0, 2.0]),),
         tasks=[
             dict(num_class=10, class_names=['car', 'truck',
                                             'construction_vehicle',
@@ -153,7 +194,7 @@ model = dict(
             post_center_range=[-61.2, -61.2, -10.0, 61.2, 61.2, 10.0],
             max_num=500,
             score_threshold=0.1,
-            out_size_factor=8,
+            out_size_factor=10*grid_config['x'][2],
             voxel_size=voxel_size[:2],
             code_size=9),
         separate_head=dict(
@@ -161,13 +202,22 @@ model = dict(
         loss_cls=dict(type='GaussianFocalLoss', reduction='mean', loss_weight=6.),
         loss_bbox=dict(type='L1Loss', reduction='mean', loss_weight=1.5),
         norm_bbox=True),
+    # seg_head=dict(
+    #         type='SegEncode',
+    #         inC=256,
+    #         outC=4,
+    #         loss_seg=dict(
+    #             type='CrossEntropyLoss',
+    #             use_sigmoid=False,
+    #             loss_weight=3.0,
+    #             class_weight=[0.3, 2.0, 2.0, 2.0]),),
     # model training and testing settings
     train_cfg=dict(
         pts=dict(
             point_cloud_range=point_cloud_range,
             grid_size=[1024, 1024, 40],
             voxel_size=voxel_size,
-            out_size_factor=8,
+            out_size_factor=10*grid_config['x'][2],
             dense_reg=1,
             gaussian_overlap=0.1,
             max_objs=500,
@@ -181,7 +231,7 @@ model = dict(
             max_pool_nms=False,
             min_radius=[4, 12, 10, 1, 0.85, 0.175],
             score_threshold=0.1,
-            out_size_factor=8,
+            out_size_factor=10*grid_config['x'][2],
             voxel_size=voxel_size[:2],
             pre_max_size=1000,
             post_max_size=500,
@@ -201,10 +251,12 @@ data_root = 'data/nuscenes/'
 file_client_args = dict(backend='disk')
 
 bda_aug_conf = dict(
-    rot_lim=(-22.5, 22.5),
-    scale_lim=(0.95, 1.05),
-    flip_dx_ratio=0.5,
-    flip_dy_ratio=0.5)
+    rot_lim=(-0., 0.),
+    scale_lim=(1., 1.),
+    # rot_lim=(-22.5, 22.5),#看起来对分割效果不好
+    # scale_lim=(0.95, 1.05),
+    flip_dx_ratio=0.0,
+    flip_dy_ratio=0.0)
 
 train_pipeline = [
     dict(
@@ -213,6 +265,7 @@ train_pipeline = [
         data_config=data_config,
         sequential=True),
     dict(type='LoadAnnotations'),
+    dict(type='RasterizeMapVectors', map_grid_conf=map_grid_conf),
     dict(
         type='BEVAug',
         bda_aug_conf=bda_aug_conf,
@@ -229,11 +282,16 @@ train_pipeline = [
     dict(type='DefaultFormatBundle3D', class_names=class_names),
     dict(
         type='Collect3D', keys=['img_inputs', 'gt_bboxes_3d', 'gt_labels_3d',
-                                'gt_depth'])
+                                'gt_depth','semantic_indices'],
+        meta_keys=('token', 'ego2img', 'sample_idx', 'ego2global_translation',
+        'ego2global_rotation', 'img_shape', 'scene_name','e2g_mat'
+        # 'pts_filename','box_mode_3d','box_type_3d'
+        ))
 ]
 
 test_pipeline = [
     dict(type='PrepareImageInputs', data_config=data_config, sequential=True),
+    dict(type='RasterizeMapVectors', map_grid_conf=map_grid_conf),
     dict(type='LoadAnnotations'),
     dict(type='BEVAug',
          bda_aug_conf=bda_aug_conf,
@@ -255,7 +313,8 @@ test_pipeline = [
                 type='DefaultFormatBundle3D',
                 class_names=class_names,
                 with_label=False),
-            dict(type='Collect3D', keys=['points', 'img_inputs'])
+            dict(type='Collect3D', keys=['points', 'img_inputs','semantic_indices'],
+                 meta_keys=('scene_name','e2g_mat','box_mode_3d','box_type_3d'))
         ])
 ]
 
@@ -276,39 +335,57 @@ share_data_config = dict(
 
 test_data_config = dict(
     pipeline=test_pipeline,
-    ann_file=data_root + 'bevdetv3-nuscenes_infos_val.pkl')
+    data_root=data_root,    
+    ann_file=data_root + 'bevdetv3-nuscenes_infos_val.pkl',
+    grid_conf=map_grid_conf,
+    )
 
 data = dict(
-    samples_per_gpu=1,
+    samples_per_gpu=batch_size,
     workers_per_gpu=4,
+    shuffle=True,
+    # train=dict(
+    #     type='CBGSDataset',
+    #     dataset=dict(
+    #     data_root=data_root,
+    #     ann_file=data_root + 'bevdetv3-nuscenes_infos_train.pkl',
+    #     pipeline=train_pipeline,
+    #     classes=class_names,
+    #     test_mode=False,
+    #     use_valid_flag=True,
+    #     grid_conf=map_grid_conf,
+    #     # we use box_type_3d='LiDAR' in kitti and nuscenes dataset
+    #     # and box_type_3d='Depth' in sunrgbd and scannet dataset.
+    #     box_type_3d='LiDAR')),
     train=dict(
-        type='CBGSDataset',
-        dataset=dict(
+        type='NuScenesDataset',#'CBGSDataset',    
         data_root=data_root,
         ann_file=data_root + 'bevdetv3-nuscenes_infos_train.pkl',
         pipeline=train_pipeline,
         classes=class_names,
         test_mode=False,
         use_valid_flag=True,
+        grid_conf=map_grid_conf,
+        seq_split_num=1,
         # we use box_type_3d='LiDAR' in kitti and nuscenes dataset
         # and box_type_3d='Depth' in sunrgbd and scannet dataset.
-        box_type_3d='LiDAR')),
+        box_type_3d='LiDAR'),
     val=test_data_config,
     test=test_data_config,
-    # shuffler_sampler=dict(
-    #     type='InfiniteGroupEachSampleInBatchSampler',
-    #     seq_split_num=2,
-    #     num_iters_to_seq=100,#1*num_iters_per_epoch,
-    #     random_drop=0.0,
-    #     cbgs=True
-    # ),
-    # nonshuffler_sampler=dict(type='DistributedSampler')
-    )
+    shuffler_sampler=dict(
+        type='InfiniteGroupEachSampleInBatchSampler',
+        seq_split_num=2,
+        num_iters_to_seq=1*num_iters_per_epoch,
+        random_drop=0.0,
+        cbgs=True
+    ),
+    nonshuffler_sampler=dict(type='DistributedSampler')
+)
 
 for key in ['val', 'test']:
     data[key].update(share_data_config)
-data['train']['dataset'].update(share_data_config)
-
+data['train'].update(share_data_config)
+# data['train']['dataset'].update(share_data_config)
 # Optimizer
 optimizer = dict(type='AdamW', lr=2e-4, weight_decay=1e-2)
 optimizer_config = dict(grad_clip=dict(max_norm=5, norm_type=2))
@@ -318,11 +395,11 @@ lr_config = dict(
     warmup_iters=200,
     warmup_ratio=0.001,
     step=[20,])
-runner = dict(type='EpochBasedRunner', max_epochs=20)
-# runner = dict(type='IterBasedRunner', max_iters=100000)#无关
-evaluation = dict(interval=1, pipeline=test_pipeline)
-# evaluation = dict(interval=1750, pipeline=test_pipeline)
-
+# runner = dict(type='EpochBasedRunner', max_epochs=20)
+runner = dict(type='IterBasedRunner', max_iters=num_epochs * num_iters_per_epoch)
+# evaluation = dict(interval=1, pipeline=test_pipeline)
+evaluation = dict(interval=num_iters_per_epoch)
+checkpoint_config = dict(interval=num_iters_per_epoch)
 custom_hooks = [
     # dict(
     #     type='MEGVIIEMAHook',
@@ -334,5 +411,6 @@ custom_hooks = [
         temporal_start_epoch=2,
     ),
 ]
-
+find_unused_parameters=False
 # fp16 = dict(loss_scale='dynamic')
+# resume_from="work_dirs/bevdepth-segonly160-1015/epoch_5.pth"

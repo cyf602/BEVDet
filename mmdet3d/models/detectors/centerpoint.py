@@ -88,6 +88,8 @@ class CenterPoint(MVXTwoStageDetector):
             bbox3d2result(bboxes, scores, labels)
             for bboxes, scores, labels in bbox_list
         ]
+        bbox_results[0]['sample_idx']=img_metas[0]['sample_idx']
+        bbox_results[0]['idx']=img_metas[0]['idx']
         return bbox_results
 
     def aug_test_pts(self, feats, img_metas, rescale=False):

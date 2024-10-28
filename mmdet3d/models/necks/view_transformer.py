@@ -311,7 +311,7 @@ class LSSViewTransformer(BaseModule):
 
             bev_feat = bev_feat.squeeze(2)
         else:
-            coor = self.get_lidar_coor(*input[1:7])
+            coor = self.get_lidar_coor(*input[1:7])#计算雷达坐标系下视椎点
             bev_feat = self.voxel_pooling_v2(
                 coor, depth.view(B, N, self.D, H, W),
                 tran_feat.view(B, N, self.out_channels, H, W))
@@ -506,7 +506,7 @@ class SELayer(nn.Module):
         x_se = self.conv_reduce(x_se)
         x_se = self.act1(x_se)
         x_se = self.conv_expand(x_se)
-        return x * self.gate(x_se)
+        return x * self.gate(x_se)#考虑到mlp input的信息
 
 
 class DepthNet(nn.Module):
@@ -644,8 +644,8 @@ class DepthNet(nn.Module):
 
     def forward(self, x, mlp_input, stereo_metas=None):
         mlp_input = self.bn(mlp_input.reshape(-1, mlp_input.shape[-1]))
-        x = self.reduce_conv(x)
-        context_se = self.context_mlp(mlp_input)[..., None, None]
+        x = self.reduce_conv(x)#[6,512,16,44]
+        context_se = self.context_mlp(mlp_input)[..., None, None]#[6,27->512,1,1]
         context = self.context_se(x, context_se)
         context = self.context_conv(context)
         depth_se = self.depth_mlp(mlp_input)[..., None, None]
@@ -762,7 +762,7 @@ class LSSViewTransformerBEVDepth(LSSViewTransformer):
             bda[:, :, 1, 1],
             bda[:, :, 2, 2],], dim=-1)
         sensor2ego = sensor2ego[:,:,:3,:].reshape(B, N, -1)
-        mlp_input = torch.cat([mlp_input, sensor2ego], dim=-1)
+        mlp_input = torch.cat([mlp_input, sensor2ego], dim=-1)#[B,6,27]
         return mlp_input
 
     def get_downsampled_gt_depth(self, gt_depths):
@@ -825,10 +825,10 @@ class LSSViewTransformerBEVDepth(LSSViewTransformer):
 
         B, N, C, H, W = x.shape
         x = x.view(B * N, C, H, W)
-        x = self.depth_net(x, mlp_input, stereo_metas)
+        x = self.depth_net(x, mlp_input, stereo_metas)#[6,110+80,16,44]
         depth_digit = x[:, :self.D, ...]
         tran_feat = x[:, self.D:self.D + self.out_channels, ...]
-        depth = depth_digit.softmax(dim=1)
+        depth = depth_digit.softmax(dim=1)#深度概率
         bev_feat, depth = self.view_transform(input, depth, tran_feat)
         return bev_feat, depth
 
