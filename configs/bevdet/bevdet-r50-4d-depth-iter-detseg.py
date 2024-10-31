@@ -76,8 +76,8 @@ data_config = {
 num_epochs=20
 batch_size=4
 num_gpus=4
-# num_iters_per_epoch = 123584 // (num_gpus * batch_size)#cgbs
-num_iters_per_epoch = 28130 // (num_gpus * batch_size)
+num_iters_per_epoch = 123584 // (num_gpus * batch_size)#cgbs
+# num_iters_per_epoch = 28130 // (num_gpus * batch_size)
 # num_iters_per_epoch = 101 // (num_gpus * batch_size)
 total_iters= num_epochs * num_iters_per_epoch
 bev_embed_dims=256
@@ -147,14 +147,14 @@ model = dict(
         num_channels=[numC_Trans,],
         stride=[1,],
         backbone_output_ids=[0,]),
-    streaming_cfg=dict(
-        streaming_bev=True,
-        batch_size=batch_size,
-        fusion_cfg=dict(
-            type='ConvGRU',
-            out_channels=bev_embed_dims,
-        )
-    ),
+    # streaming_cfg=dict(
+    #     streaming_bev=True,
+    #     batch_size=batch_size,
+    #     fusion_cfg=dict(
+    #         type='ConvGRU',
+    #         out_channels=bev_embed_dims,
+    #     )
+    # ),
     pts_bbox_head=dict(
         type='CenterHeadDetSeg',
         grid_config=grid_config,
@@ -255,8 +255,8 @@ bda_aug_conf = dict(
     scale_lim=(1., 1.),
     # rot_lim=(-22.5, 22.5),#看起来对分割效果不好
     # scale_lim=(0.95, 1.05),
-    flip_dx_ratio=0.0,
-    flip_dy_ratio=0.0)
+    flip_dx_ratio=0.,
+    flip_dy_ratio=0.)
 
 train_pipeline = [
     dict(
@@ -375,7 +375,7 @@ data = dict(
     shuffler_sampler=dict(
         type='InfiniteGroupEachSampleInBatchSampler',
         seq_split_num=2,
-        num_iters_to_seq=1*num_iters_per_epoch,
+        num_iters_to_seq=5*num_iters_per_epoch,
         random_drop=0.0,
         cbgs=True
     ),
@@ -387,14 +387,34 @@ for key in ['val', 'test']:
 data['train'].update(share_data_config)
 # data['train']['dataset'].update(share_data_config)
 # Optimizer
-optimizer = dict(type='AdamW', lr=2e-4, weight_decay=1e-2)
-optimizer_config = dict(grad_clip=dict(max_norm=5, norm_type=2))
+# optimizer = dict(type='AdamW', lr=2e-4, weight_decay=1e-2)
+# optimizer_config = dict(grad_clip=dict(max_norm=5, norm_type=2))
+# lr_config = dict(
+#     policy='step',
+#     warmup='linear',
+#     warmup_iters=200,
+#     warmup_ratio=0.001,
+#     step=[int(0.9*total_iters),]
+#     )
+
+#cfg from bevformer
+optimizer = dict(
+    type='AdamW',
+    lr=1e-4,
+    paramwise_cfg=dict(
+        custom_keys={
+            'img_backbone': dict(lr_mult=0.1),
+        }),
+    weight_decay=0.01)
+optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
+# learning policy
 lr_config = dict(
-    policy='step',
+    policy='CosineAnnealing',
     warmup='linear',
-    warmup_iters=200,
-    warmup_ratio=0.001,
-    step=[20,])
+    warmup_iters=500,
+    warmup_ratio=1.0 / 3,
+    min_lr_ratio=1e-3)
+
 # runner = dict(type='EpochBasedRunner', max_epochs=20)
 runner = dict(type='IterBasedRunner', max_iters=num_epochs * num_iters_per_epoch)
 # evaluation = dict(interval=1, pipeline=test_pipeline)
@@ -413,4 +433,4 @@ custom_hooks = [
 ]
 find_unused_parameters=False
 # fp16 = dict(loss_scale='dynamic')
-# resume_from="work_dirs/bevdepth-segonly160-1015/epoch_5.pth"
+resume_from="work_dirs/bevdepthmul-iter-base/iter_7724.pth"

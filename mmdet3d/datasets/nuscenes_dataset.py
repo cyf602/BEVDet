@@ -1,4 +1,5 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+import json
 import tempfile
 from os import path as osp
 
@@ -16,6 +17,8 @@ from .map_utils import VectorizedLocalMap
 from nuscenes import NuScenes
 from nuscenes.utils.geometry_utils import transform_matrix
 from pyquaternion import Quaternion
+from datetime import datetime
+import os
 @DATASETS.register_module()
 class NuScenesDataset(Custom3DDataset):
     r"""NuScenes Dataset.
@@ -191,6 +194,12 @@ class NuScenesDataset(Custom3DDataset):
         self.seq_split_num = seq_split_num
         if seq_split_num>0:
             self._set_sequence_group_flag()
+        now=datetime.now()
+        time_str = now.strftime("%Y-%m-%d-%H:%M:%S")
+        save_root="work_dirs/evaluation_results/det/"
+        self.savepath=save_root+time_str+".json"
+        if not os.path.exists(save_root):
+            os.mkdir(save_root)
 
     def get_cat_ids(self, idx):
         """Get category distribution of single scene.
@@ -659,10 +668,13 @@ class NuScenesDataset(Custom3DDataset):
             results_dict.update(ret_dict)
         elif isinstance(result_files, str):
             results_dict = self._evaluate_single(result_files)
-
+        det_results={}
+        for metric in ("NDS","mAP","mATE","mASE","mAOE","mAVE","mAAE"):
+            det_results[metric]=results_dict["pts_bbox_NuScenes/"+metric]
         if tmp_dir is not None:
             tmp_dir.cleanup()
-
+        with open(self.savepath, 'a') as f:
+            f.write(json.dumps(str(det_results)) + '\n')
         if show or out_dir:
             self.show(results, out_dir, show=show, pipeline=pipeline)
         return results_dict
