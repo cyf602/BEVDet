@@ -77,7 +77,7 @@ class CustomDistEvalHook(BaseDistEvalHook):
             self.dataloader,
             tmpdir=tmpdir,
             gpu_collect=self.gpu_collect)
-        self.latest_results = results#?
+        # self.latest_results = results#?
         
         if runner.rank == 0:
             if 'pts_bbox' not in results[0][0].keys():

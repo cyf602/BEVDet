@@ -16,7 +16,7 @@ from mmdet3d.datasets import build_dataset
 from mmdet3d.utils import find_latest_checkpoint
 from mmdet.core import DistEvalHook as MMDET_DistEvalHook
 from mmdet.core import EvalHook as MMDET_EvalHook
-# from mmdet.datasets import build_dataloader as build_mmdet_dataloader
+# from mmdet.datasets import build_dataloader as custom_build_dataloader
 from mmdet3d.datasets.builder import build_dataloader as custom_build_dataloader
 from mmdet.datasets import replace_ImageToTensor
 from mmdet.utils import get_root_logger as get_mmdet_root_logger
