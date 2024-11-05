@@ -19,6 +19,8 @@ from nuscenes.utils.geometry_utils import transform_matrix
 from pyquaternion import Quaternion
 from datetime import datetime
 import os
+from nuscenes.eval.common.utils import  Quaternion,quaternion_yaw
+
 @DATASETS.register_module()
 class NuScenesDataset(Custom3DDataset):
     r"""NuScenes Dataset.
@@ -268,6 +270,8 @@ class NuScenesDataset(Custom3DDataset):
             sweeps=info['sweeps'],
             timestamp=info['timestamp'] / 1e6,
             scene_name=info['scene_name'],
+            e2g_translation=info['ego2global_translation'],
+            e2g_rotation=info['ego2global_rotation'],
             idx=index
         )
         if hasattr(self, 'vector_map'):
@@ -324,7 +328,10 @@ class NuScenesDataset(Custom3DDataset):
             select_id = max(index - select_id, 0)
             if not self.data_infos[select_id]['scene_token'] == info[
                     'scene_token']:
-                info_adj_list.append(info)
+                if info_adj_list:
+                    info_adj_list.append(info_adj_list[-1])
+                else:
+                    info_adj_list.append(info)
             else:
                 info_adj_list.append(self.data_infos[select_id])
         return info_adj_list
@@ -670,7 +677,7 @@ class NuScenesDataset(Custom3DDataset):
             results_dict = self._evaluate_single(result_files)
         det_results={}
         for metric in ("NDS","mAP","mATE","mASE","mAOE","mAVE","mAAE"):
-            det_results[metric]=results_dict["pts_bbox_NuScenes/"+metric]
+            det_results[metric]=round(results_dict["pts_bbox_NuScenes/"+metric],4)
         if tmp_dir is not None:
             tmp_dir.cleanup()
         with open(self.savepath, 'a') as f:

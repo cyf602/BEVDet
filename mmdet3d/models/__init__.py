@@ -18,6 +18,7 @@ from .necks import *  # noqa: F401,F403
 from .roi_heads import *  # noqa: F401,F403
 from .segmentors import *  # noqa: F401,F403
 from .voxel_encoders import *  # noqa: F401,F403
+from .modules import *
 
 __all__ = [
     'BACKBONES', 'NECKS', 'ROI_EXTRACTORS', 'SHARED_HEADS', 'HEADS', 'LOSSES',
@@ -25,5 +26,7 @@ __all__ = [
     'FUSION_LAYERS', 'build_backbone', 'build_neck', 'build_roi_extractor',
     'build_shared_head', 'build_head', 'build_loss', 'build_detector',
     'build_fusion_layer', 'build_model', 'build_middle_encoder',
-    'build_voxel_encoder'
+    'build_voxel_encoder',
+    'SpatialCrossAttention','MSDeformableAttention3D','TemporalSelfAttention',
+    'BEVFormerEncoder','BEVFormerLayer','PerceptionTransformer',
 ]

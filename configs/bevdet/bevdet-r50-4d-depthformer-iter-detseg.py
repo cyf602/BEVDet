@@ -80,7 +80,7 @@ num_iters_per_epoch = 123584 // (num_gpus * batch_size)#cgbs
 # num_iters_per_epoch = 28130 // (num_gpus * batch_size)
 # num_iters_per_epoch = 101 // (num_gpus * batch_size)
 total_iters= num_epochs * num_iters_per_epoch
-bev_embed_dims=256
+# bev_embed_dims=256
 # Model
 grid_config = {
     'x': [-51.2, 51.2, 0.64],#分辨率要是8的倍数（bev fpn)
@@ -95,13 +95,19 @@ map_grid_conf = {
     'dbound': [1.0, 60.0, 0.5],
 }
 voxel_size = [0.1, 0.1, 0.2]
-
 numC_Trans = 80
+bev_w=int((grid_config['x'][1]-grid_config['x'][0])//grid_config['x'][2])
+bev_h=int((grid_config['y'][1]-grid_config['y'][0])//grid_config['y'][2])
+_dim_ = 256
+_pos_dim_ = _dim_//2
+_ffn_dim_ = _dim_*2
 
 multi_adj_frame_id_cfg = (1, 1+1, 1)
 
 model = dict(
-    type='BEVDepth4D_Multitask',
+    type='BEVDepth4DFormer_Multitask',
+    bev_w=bev_w,
+    bev_h=bev_h,
     align_after_view_transfromation=False,
     num_adj=len(range(*multi_adj_frame_id_cfg)),
     map_grid_conf=map_grid_conf,
@@ -132,9 +138,54 @@ model = dict(
         out_channels=numC_Trans,
         depthnet_cfg=dict(use_dcn=False, aspp_mid_channels=96),
         downsample=16),
+    formerencoder=dict(
+        type='PerceptionTransformer',
+        rotate_prev_bev=True,
+        use_shift=True,
+        use_can_bus=True,
+        embed_dims=_dim_,
+        encoder=dict(
+            type='BEVFormerEncoder',
+            num_layers=3,
+            pc_range=[grid_config['x'][0],grid_config['y'][0],grid_config['z'][0],grid_config['x'][1],grid_config['y'][1],grid_config['z'][1]],
+            num_points_in_pillar=4,
+            return_intermediate=False,
+            transformerlayers=dict(
+                type='BEVFormerLayer',
+                attn_cfgs=[
+                    dict(
+                        type='TemporalSelfAttention',
+                        embed_dims=_dim_,
+                        num_levels=1),
+                    dict(
+                        type='BevCrossAttention',
+                        embed_dims=_dim_,
+                        num_levels=3, #bev特征图,本来这里是1
+                    )
+                ],
+                ffn_cfgs=dict(
+                    type='FFN',
+                    embed_dims=_dim_,#
+                    feedforward_channels=1024,
+                    num_fcs=2,
+                    ffn_drop=0.,
+                    act_cfg=dict(type='ReLU', inplace=True),
+                ),
+                feedforward_channels=_ffn_dim_,
+                ffn_dropout=0.1,
+                operation_order=('self_attn', 'norm', 'cross_attn', 'norm',
+                                    'ffn', 'norm')))
+        # 去除decoder
+    ),
+    positional_encoding=dict(
+        type='LearnedPositionalEncoding',
+        num_feats=_pos_dim_,
+        row_num_embed=bev_w,
+        col_num_embed=bev_h,
+        ),
     img_bev_encoder_backbone=dict(
         type='CustomResNet',
-        numC_input=numC_Trans * (len(range(*multi_adj_frame_id_cfg))+1),
+        numC_input=numC_Trans,# * (len(range(*multi_adj_frame_id_cfg))+1),
         num_channels=[numC_Trans * 2, numC_Trans * 4, numC_Trans * 8]),
     img_bev_encoder_neck=dict(
         type='FPN_LSS',
@@ -202,15 +253,7 @@ model = dict(
         loss_cls=dict(type='GaussianFocalLoss', reduction='mean', loss_weight=6.),
         loss_bbox=dict(type='L1Loss', reduction='mean', loss_weight=1.5),
         norm_bbox=True),
-    # seg_head=dict(
-    #         type='SegEncode',
-    #         inC=256,
-    #         outC=4,
-    #         loss_seg=dict(
-    #             type='CrossEntropyLoss',
-    #             use_sigmoid=False,
-    #             loss_weight=3.0,
-    #             class_weight=[0.3, 2.0, 2.0, 2.0]),),
+    
     # model training and testing settings
     train_cfg=dict(
         pts=dict(
@@ -280,11 +323,13 @@ train_pipeline = [
     dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
     dict(type='ObjectNameFilter', classes=class_names),
     dict(type='DefaultFormatBundle3D', class_names=class_names),
+    dict(type='GetRelative'),
     dict(
         type='Collect3D', keys=['img_inputs', 'gt_bboxes_3d', 'gt_labels_3d',
                                 'gt_depth','semantic_indices'],
         meta_keys=('token', 'ego2img', 'sample_idx', 'ego2global_translation',
-        'ego2global_rotation', 'img_shape', 'scene_name','e2g_mat'
+        'ego2global_rotation', 'img_shape', 'scene_name','e2g_mat',
+        'relative_trans','relative_rots'
         # 'pts_filename','box_mode_3d','box_type_3d'
         ))
 ]
@@ -313,8 +358,9 @@ test_pipeline = [
                 type='DefaultFormatBundle3D',
                 class_names=class_names,
                 with_label=False),
+            dict(type='GetRelative'),
             dict(type='Collect3D', keys=['points', 'img_inputs','semantic_indices'],
-                 meta_keys=('scene_name','e2g_mat','box_mode_3d','box_type_3d','sample_idx',))
+                 meta_keys=('scene_name','e2g_mat','box_mode_3d','box_type_3d'))
         ])
 ]
 

@@ -165,7 +165,7 @@ def single_gpu_vis(model,
         with torch.no_grad():
             result = model(return_loss=False, rescale=True, **data)
             result_data=[]
-            if False and 'seg_preds' in result[0].keys() and result[0]['seg_preds'] is not None:
+            if 'seg_preds' in result[0].keys() and result[0]['seg_preds'] is not None:
                 semantic = result[0]['seg_preds']
                 semantic = onehot_encoding(semantic).cpu().numpy()
                 # 使用cv2进行可视化

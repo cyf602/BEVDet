@@ -6,7 +6,8 @@ from mmdet3d.core.bbox import BaseInstance3DBoxes
 from mmdet3d.core.points import BasePoints
 from mmdet.datasets.pipelines import to_tensor
 from ..builder import PIPELINES
-
+from nuscenes.eval.common.utils import  Quaternion,quaternion_yaw
+from math import pi
 
 @PIPELINES.register_module()
 class DefaultFormatBundle(object):
@@ -264,3 +265,48 @@ class DefaultFormatBundle3D(DefaultFormatBundle):
         repr_str += f'(class_names={self.class_names}, '
         repr_str += f'with_gt={self.with_gt}, with_label={self.with_label})'
         return repr_str
+
+@PIPELINES.register_module()
+class GetRelative(object):
+    #通过全局坐标获得时序与前一帧的相对位姿，提供给former encoder
+    def __init__(self) -> None:
+        pass
+    
+    def __call__(self, results):
+        relative_trans=[np.array([0,0,0])]
+        relative_rots=[0.]
+        lenadj=len(results['adjacent'])#从后往前时序
+        last_location=np.array(results['adjacent'][-1]['ego2global_translation'])
+        last_rotation=self.checkrot(quaternion_yaw(Quaternion(results['adjacent'][-1]['ego2global_rotation'])))
+        last_time=results['adjacent'][-1]['timestamp']
+        for i in range(lenadj-2,-1,-1):
+            cur_location=np.array(results['adjacent'][i]['ego2global_translation'])
+            cur_rotation=self.checkrot(quaternion_yaw(Quaternion(results['adjacent'][i]['ego2global_rotation'])))
+            
+            relative_trans.append(cur_location-last_location)
+            relative_rots.append(cur_rotation-last_rotation)
+            
+            last_location=cur_location
+            last_rotation=cur_rotation
+
+            if not results['adjacent'][i]['timestamp']>=last_time:
+                print('adj:',last_time,'cur:',results['adjacent'][i]['timestamp'])
+            last_time=results['adjacent'][i]['timestamp']
+        if not results['curr']['timestamp']>=last_time:
+           print('last:',last_time,'cur:',results['adjacent'][i]['timestamp'])    
+        
+        cur_location=np.array(results['curr']['ego2global_translation'])
+        cur_rotation=self.checkrot(quaternion_yaw(Quaternion(results['curr']['ego2global_rotation'])))
+        relative_trans.append(cur_location-last_location)
+        relative_rots.append(cur_rotation-last_rotation)
+        results['relative_trans']=relative_trans
+        results['relative_rots']=relative_rots
+        return results
+    
+    def checkrot(self,rot):
+        if 0<=rot<2*pi:
+            return rot
+        elif rot<0:
+            return rot+2*pi
+        else:
+            return rot-2*pi
