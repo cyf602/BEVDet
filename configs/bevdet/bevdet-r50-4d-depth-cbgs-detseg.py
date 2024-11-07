@@ -261,7 +261,9 @@ train_pipeline = [
     dict(type='LoadAnnotations'),
     dict(type='RasterizeMapVectors', map_grid_conf=map_grid_conf),
     dict(
-        type='BEVAug',
+        type='BEVAugv2',
+        bev_h=400,#bev 分割
+        bev_w=200,
         bda_aug_conf=bda_aug_conf,
         classes=class_names),
     dict(
@@ -287,7 +289,9 @@ test_pipeline = [
     dict(type='PrepareImageInputs', data_config=data_config, sequential=True),
     dict(type='RasterizeMapVectors', map_grid_conf=map_grid_conf),
     dict(type='LoadAnnotations'),
-    dict(type='BEVAug',
+    dict(type='BEVAugv2',
+         bev_h=400,#bev 分割
+         bev_w=200,
          bda_aug_conf=bda_aug_conf,
          classes=class_names,
          is_train=False),

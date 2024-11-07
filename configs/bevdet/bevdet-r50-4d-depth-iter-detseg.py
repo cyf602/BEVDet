@@ -95,7 +95,8 @@ map_grid_conf = {
     'dbound': [1.0, 60.0, 0.5],
 }
 voxel_size = [0.1, 0.1, 0.2]
-
+bev_w=int((grid_config['x'][1]-grid_config['x'][0])//grid_config['x'][2])
+bev_h=int((grid_config['y'][1]-grid_config['y'][0])//grid_config['y'][2])
 numC_Trans = 80
 
 multi_adj_frame_id_cfg = (1, 1+1, 1)
@@ -267,7 +268,9 @@ train_pipeline = [
     dict(type='LoadAnnotations'),
     dict(type='RasterizeMapVectors', map_grid_conf=map_grid_conf),
     dict(
-        type='BEVAug',
+        type='BEVAugv2',
+        bev_h=400,#bev 分割
+        bev_w=200,
         bda_aug_conf=bda_aug_conf,
         classes=class_names),
     dict(
@@ -293,7 +296,9 @@ test_pipeline = [
     dict(type='PrepareImageInputs', data_config=data_config, sequential=True),
     dict(type='RasterizeMapVectors', map_grid_conf=map_grid_conf),
     dict(type='LoadAnnotations'),
-    dict(type='BEVAug',
+    dict(type='BEVAugv2',
+         bev_h=400,#bev 分割
+         bev_w=200,
          bda_aug_conf=bda_aug_conf,
          classes=class_names,
          is_train=False),
@@ -434,4 +439,4 @@ custom_hooks = [
 ]
 find_unused_parameters=False
 # fp16 = dict(loss_scale='dynamic')
-# resume_from="work_dirs/bevdepthmul-iterbase1101-shuffle/iter_54068.pth"
+resume_from="work_dirs/bevdepthmul-itersegaug1106/iter_7724.pth"

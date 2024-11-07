@@ -12,7 +12,7 @@ from mmdet3d.core.points import BasePoints, get_points_type
 from mmdet.datasets.pipelines import LoadAnnotations, LoadImageFromFile
 from ...core.bbox import LiDARInstance3DBoxes
 from ..builder import PIPELINES
-
+from torch.nn import functional as F
 
 @PIPELINES.register_module()
 class LoadOccGTFromFile(object):
@@ -1180,7 +1180,7 @@ class BEVAug(object):
         self.bda_aug_conf = bda_aug_conf
         self.is_train = is_train
         self.classes = classes
-
+        
     def sample_bda_augmentation(self):
         """Generate bda augmentation values based on bda_config."""
         if self.is_train:
@@ -1272,4 +1272,85 @@ class BEVAug(object):
                 results['semantic_indices']=torch.flip(results['semantic_indices'],dims=[1])
             if flip_dy:
                 results['semantic_indices']=torch.flip(results['semantic_indices'],dims=[0])
+        return results
+
+@PIPELINES.register_module()
+class BEVAugv2(BEVAug):
+    def __init__(self, bev_h,bev_w,**kwargs):
+        super().__init__(**kwargs)
+        ref_y, ref_x = torch.meshgrid(
+            torch.linspace(
+                0.5-bev_h/2, bev_h/2 - 0.5, bev_h),
+            torch.linspace(
+                0.5-bev_w/2, bev_w/2 - 0.5, bev_w)
+        )
+        self.bev_h,self.bev_w=bev_h,bev_w
+        # ref_y = ref_y.reshape(-1)[None] / bev_h
+        # ref_x = ref_x.reshape(-1)[None] / bev_w
+        self.ref_2d = torch.stack((ref_x, ref_y,
+                                   torch.zeros(bev_h,bev_w),torch.ones(bev_h,bev_w)), -1)
+    
+    def __call__(self, results):
+        gt_boxes = results['gt_bboxes_3d'].tensor
+        gt_boxes[:,2] = gt_boxes[:,2] + 0.5*gt_boxes[:,5]
+        rotate_bda, scale_bda, flip_dx, flip_dy, tran_bda = \
+            self.sample_bda_augmentation()
+        bda_mat = torch.zeros(4, 4)
+        bda_mat[3, 3] = 1
+        gt_boxes, bda_rot = self.bev_transform(gt_boxes, rotate_bda, scale_bda,
+                                               flip_dx, flip_dy, tran_bda)
+        if 'points' in results:
+            points = results['points'].tensor
+            points_aug = (bda_rot @ points[:, :3].unsqueeze(-1)).squeeze(-1)
+            points[:,:3] = points_aug + tran_bda
+            points = results['points'].new_point(points)
+            results['points'] = points
+        bda_mat[:3, :3] = bda_rot
+        bda_mat[:3, 3] = torch.from_numpy(tran_bda)
+        if len(gt_boxes) == 0:
+            gt_boxes = torch.zeros(0, 9)
+        results['gt_bboxes_3d'] = \
+            LiDARInstance3DBoxes(gt_boxes, box_dim=gt_boxes.shape[-1],
+                                 origin=(0.5, 0.5, 0.5))
+        if 'img_inputs' in results:
+            imgs, rots, trans, intrins = results['img_inputs'][:4]
+            post_rots, post_trans = results['img_inputs'][4:]
+            results['img_inputs'] = (imgs, rots, trans, intrins, post_rots,
+                                     post_trans, bda_mat)
+        if 'voxel_semantics' in results:
+            if flip_dx:
+                results['voxel_semantics'] = results['voxel_semantics'][::-1,...].copy()
+                results['mask_lidar'] = results['mask_lidar'][::-1,...].copy()
+                results['mask_camera'] = results['mask_camera'][::-1,...].copy()
+            if flip_dy:
+                results['voxel_semantics'] = results['voxel_semantics'][:,::-1,...].copy()
+                results['mask_lidar'] = results['mask_lidar'][:,::-1,...].copy()
+                results['mask_camera'] = results['mask_camera'][:,::-1,...].copy()
+        if 'semantic_indices' in results:
+            _bda_mat=torch.zeros(2,3)
+            _bda_mat[:2,:2]=bda_mat[:2,:2]
+            semgt=results['semantic_indices'].to(torch.float32)
+            grid = F.affine_grid(_bda_mat.unsqueeze(0), semgt.unsqueeze(0).unsqueeze(0).size())#.long()grid_sampler_2d_cpu not implemented for Long
+            output = F.grid_sample(semgt.unsqueeze(0).unsqueeze(0), grid,mode='nearest')
+            results['semantic_indices']=output.squeeze().squeeze().long()
+            pass
+            # target_semantic_indices=output.long() #or results['semantic_indices'].unsqueeze(0).unsqueeze(0)
+            # one_hot = target_semantic_indices.new_full([1,4,w,h], 0).long()#4为类别数
+            # one_hot.scatter_(1, target_semantic_indices, 1)
+            # semantic = one_hot.cpu().numpy().astype(np.float)
+            # cv2.imwrite(savepath,show_seg(semantic.squeeze(),car_img_cv))
+            
+            # transed_loc=torch.inverse(bda_mat)@(self.ref_2d.view(-1,4).transpose(0,1))
+            # transed_loc=transed_loc.transpose(0,1).view(self.bev_w,self.bev_h,4)
+            # transed_loc[...,0]+=(self.bev_w/2-0.5)
+            # transed_loc[...,1]+=(self.bev_h/2-0.5)
+            # indices=torch.round(transed_loc).long()#[w,h,4]这些格来自原来的哪里
+            # validmask=(0<=indices[...,0])*(indices[...,0]<160)*(0<=indices[...,1])*(indices[...,1]<160) #[160,160]
+            # indices*=validmask.unsqueeze(-1)
+            # results['semantic_indices']=results['semantic_indices'][indices[...,0],indices[...,1]]
+            # results['seg_validmask']=validmask
+            # if flip_dx:#[y,x][200,400]
+            #     results['semantic_indices']=torch.flip(results['semantic_indices'],dims=[1])
+            # if flip_dy:
+            #     results['semantic_indices']=torch.flip(results['semantic_indices'],dims=[0])
         return results

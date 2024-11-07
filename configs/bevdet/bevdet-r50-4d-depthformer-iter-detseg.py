@@ -140,8 +140,8 @@ model = dict(
         downsample=16),
     formerencoder=dict(
         type='PerceptionTransformer',
-        rotate_prev_bev=True,
-        use_shift=True,
+        rotate_prev_bev=False,
+        use_shift=False,
         use_can_bus=True,
         embed_dims=_dim_,
         encoder=dict(
@@ -294,10 +294,10 @@ data_root = 'data/nuscenes/'
 file_client_args = dict(backend='disk')
 
 bda_aug_conf = dict(
-    # rot_lim=(-0., 0.),
-    # scale_lim=(1., 1.),
-    rot_lim=(-22.5, 22.5),#看起来对分割效果不好
-    scale_lim=(0.95, 1.05),
+    rot_lim=(-0., 0.),
+    scale_lim=(1., 1.),
+    # rot_lim=(-22.5, 22.5),#看起来对分割效果不好
+    # scale_lim=(0.95, 1.05),
     flip_dx_ratio=0.5,
     flip_dy_ratio=0.5)
 
@@ -310,7 +310,9 @@ train_pipeline = [
     dict(type='LoadAnnotations'),
     dict(type='RasterizeMapVectors', map_grid_conf=map_grid_conf),
     dict(
-        type='BEVAug',
+        type='BEVAugv2',
+        bev_h=400,#分割gt尺寸
+        bev_w=200,
         bda_aug_conf=bda_aug_conf,
         classes=class_names),
     dict(
@@ -329,7 +331,7 @@ train_pipeline = [
                                 'gt_depth','semantic_indices'],
         meta_keys=('token', 'ego2img', 'sample_idx', 'ego2global_translation',
         'ego2global_rotation', 'img_shape', 'scene_name','e2g_mat',
-        'relative_trans','relative_rots'
+        'relative_trans','relative_rots','seg_validmask'
         # 'pts_filename','box_mode_3d','box_type_3d'
         ))
 ]
@@ -338,7 +340,9 @@ test_pipeline = [
     dict(type='PrepareImageInputs', data_config=data_config, sequential=True),
     dict(type='RasterizeMapVectors', map_grid_conf=map_grid_conf),
     dict(type='LoadAnnotations'),
-    dict(type='BEVAug',
+    dict(type='BEVAugv2',
+         bev_h=bev_h,
+         bev_w=bev_w,
          bda_aug_conf=bda_aug_conf,
          classes=class_names,
          is_train=False),
