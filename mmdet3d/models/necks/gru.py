@@ -17,7 +17,7 @@ class ConvGRU(nn.Module):
             out_channels, kernel_size=kernel_size, padding=padding, bias=False)
         self.convq = nn.Conv2d(2*out_channels, 
             out_channels, kernel_size=kernel_size, padding=padding, bias=False)
-        self.ln = nn.LayerNorm(out_channels)
+        # self.ln = nn.LayerNorm(out_channels)
 
     def init_weights(self):
         for m in self.modules():
@@ -37,5 +37,5 @@ class ConvGRU(nn.Module):
         q = self.convq(new_x)
 
         out = ((1 - z) * h + z * q).squeeze(0) # (1, C, H, W)
-        out = self.ln(out.permute(1, 2, 0)).permute(2, 0, 1).contiguous()
+        # out = self.ln(out.permute(1, 2, 0)).permute(2, 0, 1).contiguous()
         return out
