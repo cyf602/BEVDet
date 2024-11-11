@@ -147,7 +147,7 @@ class NuScenesDataset(Custom3DDataset):
                  multi_adj_frame_id_cfg=None,
                  ego_cam='CAM_FRONT',
                  grid_conf=None,
-                 seq_split_num=1,
+                 seq_split_num=-1,
                  stereo=False):
         self.load_interval = load_interval
         self.use_valid_flag = use_valid_flag
@@ -238,7 +238,7 @@ class NuScenesDataset(Custom3DDataset):
         """
         data = mmcv.load(ann_file, file_format='pkl')
         data_infos = list(sorted(data['infos'], key=lambda e: e['timestamp']))
-        data_infos = data_infos[::self.load_interval]#[:500]
+        data_infos = data_infos[::self.load_interval]#[:300]
         self.metadata = data['metadata']
         self.version = self.metadata['version']
         return data_infos

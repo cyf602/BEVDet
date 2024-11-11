@@ -1328,7 +1328,14 @@ class BEVAugv2(BEVAug):
                 results['mask_camera'] = results['mask_camera'][:,::-1,...].copy()
         if 'semantic_indices' in results:
             _bda_mat=torch.zeros(2,3)
-            _bda_mat[:2,:2]=bda_mat[:2,:2]
+            # rotate_angle=torch.tensor(rotate_bda / 180 * np.pi)
+            # rot_sin = torch.sin(-rotate_angle)
+            # rot_cos = torch.cos(-rotate_angle)
+            # _bda_rot_mat=torch.tensor([
+            #     [rot_cos, -rot_sin],
+            #     [rot_sin, rot_cos]
+            # ], dtype=torch.float)
+            _bda_mat[:2,:2]=bda_mat[:2,:2]*torch.tensor([[1,-1],[-1,1]])#颠倒sin，改变rot角度正方向
             semgt=results['semantic_indices'].to(torch.float32)
             grid = F.affine_grid(_bda_mat.unsqueeze(0), semgt.unsqueeze(0).unsqueeze(0).size())#.long()grid_sampler_2d_cpu not implemented for Long
             output = F.grid_sample(semgt.unsqueeze(0).unsqueeze(0), grid,mode='nearest')
