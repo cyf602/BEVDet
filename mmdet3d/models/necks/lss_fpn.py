@@ -135,3 +135,36 @@ class LSSFPN3D(nn.Module):
         else:
             x = self.conv(x)
         return x
+    
+@NECKS.register_module()
+class ChannelConvert(nn.Module):
+
+    def __init__(self,
+                 in_channels,
+                 out_channels=256,
+                 input_feature_index=(0, 2),
+                 norm_cfg=dict(type='BN'),
+                 ):
+        super().__init__()
+        self.input_feature_index = input_feature_index
+        convs = []
+        for in_channel in in_channels:
+            convs.append(nn.Sequential(
+                nn.Conv2d(
+                    in_channel,
+                    out_channels,
+                    kernel_size=1,),
+                build_norm_layer(
+                    norm_cfg, out_channels, postfix=0)[1],
+            ))
+        self.convs=nn.ModuleList(convs)
+        for proj in self.convs:
+            nn.init.xavier_uniform_(proj[0].weight, gain=1)
+            nn.init.constant_(proj[0].bias, 0)
+        
+
+    def forward(self, feats):
+        outs=[]
+        for feat,conv in zip(feats,self.convs):
+            outs.append(conv(feat))
+        return outs

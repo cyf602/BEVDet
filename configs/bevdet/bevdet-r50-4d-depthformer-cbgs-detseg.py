@@ -100,6 +100,8 @@ multi_adj_frame_id_cfg = (1, 1+1, 1)
 
 model = dict(
     type='BEVDepth4DFormer_Multitask',
+    bev_w=bev_w,
+    bev_h=bev_h,
     align_after_view_transfromation=False,
     num_adj=len(range(*multi_adj_frame_id_cfg)),
     map_grid_conf=map_grid_conf,
@@ -177,12 +179,15 @@ model = dict(
         ),
     img_bev_encoder_backbone=dict(
         type='CustomResNet',
-        numC_input=numC_Trans * (len(range(*multi_adj_frame_id_cfg))+1),
+        numC_input=numC_Trans,# * (len(range(*multi_adj_frame_id_cfg))+1),
         num_channels=[numC_Trans * 2, numC_Trans * 4, numC_Trans * 8]),
-    img_bev_encoder_neck=dict(
-        type='FPN_LSS',
-        in_channels=numC_Trans * 8 + numC_Trans * 2,
-        out_channels=256),
+    bev_channel_neck=dict(
+        type='ChannelConvert',
+        in_channels=[numC_Trans * 2, numC_Trans * 4, numC_Trans * 8],),
+    # img_bev_encoder_neck=dict(
+    #     type='FPN_LSS',
+    #     in_channels=numC_Trans * 8 + numC_Trans * 2,
+    #     out_channels=256),
     pre_process=dict(
         type='CustomResNet',
         numC_input=numC_Trans,
@@ -294,9 +299,9 @@ data_root = 'data/nuscenes/'
 file_client_args = dict(backend='disk')
 
 bda_aug_conf = dict(
-    # rot_lim=(-0., 0.),
+    rot_lim=(-0., 0.),
     # scale_lim=(1., 1.),
-    rot_lim=(-22.5, 22.5),#看起来对分割效果不好
+    # rot_lim=(-22.5, 22.5),#看起来对分割效果不好
     scale_lim=(0.95, 1.05),
     flip_dx_ratio=0.5,
     flip_dy_ratio=0.5)
@@ -325,11 +330,13 @@ train_pipeline = [
     dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
     dict(type='ObjectNameFilter', classes=class_names),
     dict(type='DefaultFormatBundle3D', class_names=class_names),
+    dict(type='GetRelative'),
     dict(
         type='Collect3D', keys=['img_inputs', 'gt_bboxes_3d', 'gt_labels_3d',
                                 'gt_depth','semantic_indices'],
         meta_keys=('token', 'ego2img', 'sample_idx', 'ego2global_translation',
-        'ego2global_rotation', 'img_shape', 'scene_name','e2g_mat'
+        'ego2global_rotation', 'img_shape', 'scene_name',
+        'relative_trans','relative_rots','e2g_mat'
         # 'pts_filename','box_mode_3d','box_type_3d'
         ))
 ]
@@ -360,8 +367,11 @@ test_pipeline = [
                 type='DefaultFormatBundle3D',
                 class_names=class_names,
                 with_label=False),
+            dict(type='GetRelative'),
             dict(type='Collect3D', keys=['points', 'img_inputs','semantic_indices'],
-                 meta_keys=('scene_name','e2g_mat','box_mode_3d','box_type_3d','sample_idx'))
+                 meta_keys=('scene_name','e2g_mat','box_mode_3d','box_type_3d','sample_idx',
+                    'relative_trans','relative_rots','e2g_mat'
+                            ))
         ])
 ]
 

@@ -44,6 +44,8 @@ class BEVFormerEncoder(TransformerLayerSequence):
         self.num_points_in_pillar = num_points_in_pillar
         self.pc_range = pc_range
         self.fp16_enabled = False
+        self.last_bda_mat=None
+        self.device=None
 
     @staticmethod
     def get_reference_points(H, W, Z=8, num_points_in_pillar=4, dim='3d', bs=1, device='cuda', dtype=torch.float):
@@ -160,6 +162,7 @@ class BEVFormerEncoder(TransformerLayerSequence):
                 valid_ratios=None,
                 prev_bev=None,
                 shift=0.,
+                bda_mat=torch.eye(2),
                 **kwargs):
         """Forward function for `TransformerDecoder`.
         Args:
@@ -199,6 +202,9 @@ class BEVFormerEncoder(TransformerLayerSequence):
         bev_query = bev_query.permute(1, 0, 2)
         bev_pos = bev_pos.permute(1, 0, 2)
         bs, len_bev, num_bev_level, _ = ref_2d.shape
+        device=bev_query.device
+        if self.device:assert(device==self.device)#同进程上device应该不会变？
+        self.device=device
         if prev_bev is not None:
             prev_bev = prev_bev.permute(1, 0, 2)
             prev_bev = torch.stack(
@@ -208,7 +214,11 @@ class BEVFormerEncoder(TransformerLayerSequence):
         else:
             hybrid_ref_2d = torch.stack([ref_2d, ref_2d], 1).reshape(
                 bs*2, len_bev, num_bev_level, 2)
-
+        #考虑bda后的参考点位置
+        if self.last_bda_mat is None:
+            self.last_bda_mat=torch.eye(2).repeat(bs*2,1,1).to(device)
+        hybrid_ref_2d=torch.einsum('bxy,bnky->bnkx', self.last_bda_mat.to(device), hybrid_ref_2d)
+        ref_2d=torch.einsum('bxy,bnky->bnkx', bda_mat, ref_2d)
         for lid, layer in enumerate(self.layers):
             output = layer(
                 bev_query,#[B,150*150,256]
@@ -231,7 +241,7 @@ class BEVFormerEncoder(TransformerLayerSequence):
             bev_query = output
             if self.return_intermediate:
                 intermediate.append(output)
-
+        self.last_bda_mat=torch.cat([bda_mat,bda_mat],dim=0)
         if self.return_intermediate:
             return torch.stack(intermediate)
 

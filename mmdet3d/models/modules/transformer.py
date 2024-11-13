@@ -120,12 +120,13 @@ class PerceptionTransformer(BaseModule):
             bev_pos=None,#[B,256,bevh,bevw]
             prev_bev=None,
             t_idx=0,#时序上帧序号
+            bda_mat=torch.eye(2),
             **kwargs):
         """
         obtain bev features.
         """
 
-        bs = mlvl_feats.size(0)
+        bs = mlvl_feats[0].size(0)
         bev_queries = bev_queries.unsqueeze(1).repeat(1, bs, 1)
         bev_pos = bev_pos.flatten(2).permute(2, 0, 1)
 
@@ -134,7 +135,7 @@ class PerceptionTransformer(BaseModule):
                            for each in kwargs['img_metas']])#遍历 batch
         delta_y = np.array([each['relative_trans'][t_idx][1]
                            for each in kwargs['img_metas']])
-        ego_angle = np.array(
+        ego_angle = np.array(#改全局角
             [each['relative_rots'][t_idx] / np.pi * 180 for each in kwargs['img_metas']])
         grid_length_y = grid_length[0]
         grid_length_x = grid_length[1]
@@ -206,6 +207,7 @@ class PerceptionTransformer(BaseModule):
             level_start_index=level_start_index,
             prev_bev=prev_bev,
             shift=shift,
+            bda_mat=bda_mat,
             **kwargs
         )
 

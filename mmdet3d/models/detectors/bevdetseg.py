@@ -308,7 +308,7 @@ class BevFeatureSlicer(nn.Module):
     
 @DETECTORS.register_module()
 class BEVDepth4DFormer_Multitask(BEVDepth4D_Multitask):
-    def __init__(self,bev_w,bev_h,positional_encoding=None,formerencoder=None,**kwargs):
+    def __init__(self,bev_w,bev_h,bev_channel_neck,positional_encoding=None,formerencoder=None,**kwargs):
         super().__init__(**kwargs)
         self.bev_w=bev_w
         self.bev_h=bev_h
@@ -325,6 +325,8 @@ class BEVDepth4DFormer_Multitask(BEVDepth4D_Multitask):
         if positional_encoding:
             self.positional_encoding = build_positional_encoding(
                 positional_encoding)
+        self.bev_channel_neck=builder.build_neck(bev_channel_neck)
+        
     def extract_img_feat(self, img, img_metas, pred_prev=False, sequential=False, **kwargs):
         if sequential:
             return self.extract_img_feat_sequential(img, kwargs['feat_prev'])
@@ -401,7 +403,8 @@ class BEVDepth4DFormer_Multitask(BEVDepth4D_Multitask):
                                     device=bev_queries.device).to(dtype)
                     bev_pos = self.positional_encoding(bev_mask).to(dtype)
                     cur_bev=self.img_bev_encoder_backbone(cur_bev)#多尺度        
-                    cur_bev=self.img_bev_encoder_neck(cur_bev)
+                    # cur_bev=self.img_bev_encoder_neck(cur_bev)
+                    cur_bev=self.bev_channel_neck(cur_bev)
                     prev_bev=self.tempformer(#这里面就是get bev features
                         cur_bev,#原为图像特征
                         bev_queries,#[4e4,256]
@@ -416,6 +419,7 @@ class BEVDepth4DFormer_Multitask(BEVDepth4D_Multitask):
                         img_metas=img_metas,
                         prev_bev=prev_bev,
                         t_idx=i,
+                        bda_mat=bda[:,:2,:2],
                     )
                 if istraining:
                     self.train()
@@ -426,8 +430,8 @@ class BEVDepth4DFormer_Multitask(BEVDepth4D_Multitask):
                                 device=bev_queries.device).to(dtype)
                 bev_pos = self.positional_encoding(bev_mask).to(dtype)
                 cur_bev=self.img_bev_encoder_backbone(cur_bev)#多尺度            
-                cur_bev=self.img_bev_encoder_neck(cur_bev)
-                bs,d,w,h=cur_bev.shape
+                # cur_bev=self.img_bev_encoder_neck(cur_bev)
+                cur_bev=self.bev_channel_neck(cur_bev)    
                 prev_bev=self.tempformer(#[B,w*h,256]
                     cur_bev,
                     bev_queries,#[4e4,256]
@@ -442,6 +446,7 @@ class BEVDepth4DFormer_Multitask(BEVDepth4D_Multitask):
                     img_metas=img_metas,
                     prev_bev=prev_bev,
                     t_idx=i,
+                    bda_mat=bda[:,:2,:2]
                 )
             new_bev_feat_list.append(prev_bev.permute(0,2,1).reshape(bs,-1,self.bev_w,self.bev_h))#[B,w*h,256]
         # bev_feat=torch.cat(new_bev_feat_list,dim=1)#[B,32*3,16,200,200]
