@@ -154,7 +154,7 @@ model = dict(
                     dict(
                         type='BevCrossAttention',
                         embed_dims=_dim_,
-                        num_levels=3, #bev特征图,本来这里是1
+                        num_levels=4, #bev特征图,本来这里是1
                     )
                 ],
                 ffn_cfgs=dict(
@@ -183,7 +183,7 @@ model = dict(
         num_channels=[numC_Trans * 2, numC_Trans * 4, numC_Trans * 8]),
     bev_channel_neck=dict(
         type='ChannelConvert',
-        in_channels=[numC_Trans * 2, numC_Trans * 4, numC_Trans * 8],),
+        in_channels=[numC_Trans,numC_Trans * 2, numC_Trans * 4, numC_Trans * 8],),
     # img_bev_encoder_neck=dict(
     #     type='FPN_LSS',
     #     in_channels=numC_Trans * 8 + numC_Trans * 2,
@@ -300,11 +300,11 @@ file_client_args = dict(backend='disk')
 
 bda_aug_conf = dict(
     rot_lim=(-0., 0.),
-    # scale_lim=(1., 1.),
+    scale_lim=(1., 1.),
     # rot_lim=(-22.5, 22.5),#看起来对分割效果不好
-    scale_lim=(0.95, 1.05),
-    flip_dx_ratio=0.5,
-    flip_dy_ratio=0.5)
+    # scale_lim=(0.95, 1.05),
+    flip_dx_ratio=0.0,
+    flip_dy_ratio=0.0)
 
 train_pipeline = [
     dict(

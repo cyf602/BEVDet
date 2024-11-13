@@ -35,7 +35,7 @@ class BEVFormerEncoder(TransformerLayerSequence):
             `LN`.
     """
 
-    def __init__(self, *args, pc_range=None, num_points_in_pillar=4, return_intermediate=False, dataset_type='nuscenes',
+    def __init__(self, *args, pc_range=None,num_points_in_pillar=4, return_intermediate=False, dataset_type='nuscenes',
                  **kwargs):
 
         super(BEVFormerEncoder, self).__init__(*args, **kwargs)
@@ -46,6 +46,7 @@ class BEVFormerEncoder(TransformerLayerSequence):
         self.fp16_enabled = False
         self.last_bda_mat=None
         self.device=None
+        self.bda_center=None#当车体不位于bevmap中心时，指定bda中心位置
 
     @staticmethod
     def get_reference_points(H, W, Z=8, num_points_in_pillar=4, dim='3d', bs=1, device='cuda', dtype=torch.float):
@@ -89,6 +90,23 @@ class BEVFormerEncoder(TransformerLayerSequence):
             ref_2d = torch.stack((ref_x, ref_y), -1)
             ref_2d = ref_2d.repeat(bs, 1, 1).unsqueeze(2)
             return ref_2d
+
+    def convert_refpt_with_bda(self,ref_2d,shift_ref_2d,bda_mat,bevw,bevh):
+        bs=ref_2d.size(0)
+        device=ref_2d.device
+        ref_2d[...,0]=(ref_2d[...,0]-0.5)*bevw#把ego移动到中心
+        ref_2d[...,1]=(ref_2d[...,1]-0.5)*bevh#单位为"格”，车体坐标下？
+        # if self.last_bda_mat is None:
+        #     self.last_bda_mat=torch.eye(2).repeat(bs,1,1).to(device)
+        shift_ref_2d=torch.einsum('bxy,bnky->bnkx', bda_mat, shift_ref_2d)
+        ref_2d=torch.einsum('bxy,bnky->bnkx', bda_mat, ref_2d)
+        #再变回原来的
+        ref_2d[...,0]=ref_2d[...,0]/bevw+0.5
+        ref_2d[...,1]=ref_2d[...,1]/bevh+0.5
+        shift_ref_2d[...,0]=shift_ref_2d[...,0]/bevw+0.5
+        shift_ref_2d[...,1]=shift_ref_2d[...,1]/bevh+0.5
+        return shift_ref_2d,ref_2d
+        
 
     # This function must use fp32!!!
     @force_fp32(apply_to=('reference_points', 'img_metas'))
@@ -202,9 +220,14 @@ class BEVFormerEncoder(TransformerLayerSequence):
         bev_query = bev_query.permute(1, 0, 2)
         bev_pos = bev_pos.permute(1, 0, 2)
         bs, len_bev, num_bev_level, _ = ref_2d.shape
+        
         device=bev_query.device
         if self.device:assert(device==self.device)#同进程上device应该不会变？
         self.device=device
+        
+        #考虑bda后的参考点位置
+        shift_ref_2d,ref_2d=self.convert_refpt_with_bda(ref_2d,shift_ref_2d,bda_mat,bev_w,bev_h)
+        
         if prev_bev is not None:
             prev_bev = prev_bev.permute(1, 0, 2)
             prev_bev = torch.stack(
@@ -214,11 +237,6 @@ class BEVFormerEncoder(TransformerLayerSequence):
         else:
             hybrid_ref_2d = torch.stack([ref_2d, ref_2d], 1).reshape(
                 bs*2, len_bev, num_bev_level, 2)
-        #考虑bda后的参考点位置
-        if self.last_bda_mat is None:
-            self.last_bda_mat=torch.eye(2).repeat(bs*2,1,1).to(device)
-        hybrid_ref_2d=torch.einsum('bxy,bnky->bnkx', self.last_bda_mat.to(device), hybrid_ref_2d)
-        ref_2d=torch.einsum('bxy,bnky->bnkx', bda_mat, ref_2d)
         for lid, layer in enumerate(self.layers):
             output = layer(
                 bev_query,#[B,150*150,256]
@@ -241,7 +259,7 @@ class BEVFormerEncoder(TransformerLayerSequence):
             bev_query = output
             if self.return_intermediate:
                 intermediate.append(output)
-        self.last_bda_mat=torch.cat([bda_mat,bda_mat],dim=0)
+        self.last_bda_mat=bda_mat.clone() #torch.cat([bda_mat,bda_mat],dim=0)
         if self.return_intermediate:
             return torch.stack(intermediate)
 

@@ -402,11 +402,12 @@ class BEVDepth4DFormer_Multitask(BEVDepth4D_Multitask):
                     bev_mask = torch.zeros((bs, self.bev_h, self.bev_w),
                                     device=bev_queries.device).to(dtype)
                     bev_pos = self.positional_encoding(bev_mask).to(dtype)
-                    cur_bev=self.img_bev_encoder_backbone(cur_bev)#多尺度        
+                    multi_scale_bev=self.img_bev_encoder_backbone(cur_bev)#多尺度        
                     # cur_bev=self.img_bev_encoder_neck(cur_bev)
-                    cur_bev=self.bev_channel_neck(cur_bev)
+                    multi_scale_bev.insert(0,cur_bev)
+                    multi_scale_bev=self.bev_channel_neck(multi_scale_bev)
                     prev_bev=self.tempformer(#这里面就是get bev features
-                        cur_bev,#原为图像特征
+                        multi_scale_bev,#原为图像特征
                         bev_queries,#[4e4,256]
                         # object_query_embeds,
                         self.bev_h,
@@ -429,11 +430,12 @@ class BEVDepth4DFormer_Multitask(BEVDepth4D_Multitask):
                 bev_mask = torch.zeros((bs, self.bev_h, self.bev_w),
                                 device=bev_queries.device).to(dtype)
                 bev_pos = self.positional_encoding(bev_mask).to(dtype)
-                cur_bev=self.img_bev_encoder_backbone(cur_bev)#多尺度            
+                multi_scale_bev=self.img_bev_encoder_backbone(cur_bev)#多尺度        
                 # cur_bev=self.img_bev_encoder_neck(cur_bev)
-                cur_bev=self.bev_channel_neck(cur_bev)    
+                multi_scale_bev.insert(0,cur_bev) 
+                multi_scale_bev=self.bev_channel_neck(multi_scale_bev)
                 prev_bev=self.tempformer(#[B,w*h,256]
-                    cur_bev,
+                    multi_scale_bev,
                     bev_queries,#[4e4,256]
                     # object_query_embeds,
                     self.bev_h,
