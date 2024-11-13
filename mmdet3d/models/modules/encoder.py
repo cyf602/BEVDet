@@ -225,8 +225,8 @@ class BEVFormerEncoder(TransformerLayerSequence):
         if self.device:assert(device==self.device)#同进程上device应该不会变？
         self.device=device
         
-        #考虑bda后的参考点位置
-        shift_ref_2d,ref_2d=self.convert_refpt_with_bda(ref_2d,shift_ref_2d,bda_mat,bev_w,bev_h)
+        #考虑bda后的参考点位置(好像不用)
+        # shift_ref_2d,ref_2d=self.convert_refpt_with_bda(ref_2d,shift_ref_2d,bda_mat,bev_w,bev_h)
         
         if prev_bev is not None:
             prev_bev = prev_bev.permute(1, 0, 2)

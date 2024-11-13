@@ -300,11 +300,11 @@ file_client_args = dict(backend='disk')
 
 bda_aug_conf = dict(
     rot_lim=(-0., 0.),
-    scale_lim=(1., 1.),
+    # scale_lim=(1., 1.),
     # rot_lim=(-22.5, 22.5),#看起来对分割效果不好
-    # scale_lim=(0.95, 1.05),
-    flip_dx_ratio=0.0,
-    flip_dy_ratio=0.0)
+    scale_lim=(0.95, 1.05),
+    flip_dx_ratio=0.5,
+    flip_dy_ratio=0.5)
 
 train_pipeline = [
     dict(
