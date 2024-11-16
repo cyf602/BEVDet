@@ -49,7 +49,7 @@ _base_ = ['../_base_/datasets/nus-3d.py', '../_base_/default_runtime.py']
 # Global
 # If point cloud range is changed, the models should also change their point
 # cloud range accordingly
-point_cloud_range = [-10.24, -10.24, -5.0, 51.2, 51.2, 3.0]
+point_cloud_range = [-51.2, -10.24, -5.0, 51.2, 51.2, 3.0]
 # For nuScenes we usually do 10-class detection
 class_names = [
     'car', 'truck', 'construction_vehicle', 'bus', 'trailer', 'barrier',
@@ -79,13 +79,13 @@ batch_size=4
 bev_embed_dims=256
 # Model
 grid_config = {
-    'x': [-10.24, 51.2, 0.64],#分辨率要是8的倍数（bev fpn)
+    'x': [-51.2, 51.2, 0.64],#分辨率要是8的倍数（bev fpn)
     'y': [-10.24, 51.2, 0.64],
     'z': [-5, 3, 8],
     'depth': [1.0, 60.0, 0.5],
 }
 map_grid_conf = {
-    'xbound': [-6.0, 30.0, 0.15],
+    'xbound': [-30.0, 30.0, 0.15],
     'ybound': [-3.0, 15.0, 0.15],#分辨率要是8的倍数(seg head)
     'zbound': [-5.0,3.0,8.0],#[-10.0, 10.0, 20.0],
     'dbound': [1.0, 60.0, 0.5],
@@ -157,7 +157,7 @@ model = dict(
         grid_config=grid_config,
         map_grid_conf=map_grid_conf,
         in_channels=256,
-        pred_det=True,
+        pred_det=False,
         pred_seg=True,
         pred_vec=False,
         loss_seg=dict(
@@ -188,7 +188,7 @@ model = dict(
         bbox_coder=dict(
             type='CenterPointBBoxCoder',
             pc_range=point_cloud_range[:2],
-            post_center_range=[-15.24, -15.24, -10.0, 61.2, 61.2, 10.0],
+            post_center_range=[-61.2, -15.24, -10.0, 61.2, 61.2, 10.0],
             max_num=500,
             score_threshold=0.1,
             out_size_factor=1024/bev_w,
@@ -223,7 +223,7 @@ model = dict(
     test_cfg=dict(
         pts=dict(
             pc_range=point_cloud_range[:2],
-            post_center_limit_range=[-15.24, -15.24, -10.0, 61.2, 61.2, 10.0],
+            post_center_limit_range=[-61.2, -15.24, -10.0, 61.2, 61.2, 10.0],
             max_per_img=500,
             max_pool_nms=False,
             min_radius=[4, 12, 10, 1, 0.85, 0.175],
