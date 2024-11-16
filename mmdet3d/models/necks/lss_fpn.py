@@ -90,15 +90,15 @@ class FPN_LSS(nn.Module):
     def forward(self, feats):
         x2, x1 = feats[self.input_feature_index[0]], \
                  feats[self.input_feature_index[1]]
-        if self.lateral:
+        if self.lateral:#F
             x2 = self.lateral_conv(x2)
         x1 = self.up(x1)
-        x = torch.cat([x2, x1], dim=1)
-        if self.input_conv is not None:
+        x = torch.cat([x2, x1], dim=1)#[B,640+160,w,h]
+        if self.input_conv is not None:#F
             x = self.input_conv(x)
-        x = self.conv(x)
+        x = self.conv(x)#[B,512,w,h]
         if self.extra_upsample:
-            x = self.up2(x)
+            x = self.up2(x)#[B,256,160,160]
         return x
 
 @NECKS.register_module()
@@ -143,7 +143,7 @@ class ChannelConvert(nn.Module):
                  in_channels,
                  out_channels=256,
                  input_feature_index=(0, 2),
-                 norm_cfg=dict(type='BN'),
+                 norm_cfg=dict(type='GN',num_groups=32),
                  ):
         super().__init__()
         self.input_feature_index = input_feature_index

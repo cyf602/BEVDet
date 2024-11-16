@@ -244,8 +244,8 @@ class BEVFormerEncoder(TransformerLayerSequence):
                 value,
                 *args,
                 bev_pos=bev_pos,
-                hybrid_ref_2d=hybrid_ref_2d,
-                ref_2d=ref_2d,
+                hybrid_ref_2d=hybrid_ref_2d,#用于时序attn
+                ref_2d=ref_2d,#用于cross attn
                 ref_3d=ref_3d,
                 bev_h=bev_h,
                 bev_w=bev_w,
@@ -322,7 +322,7 @@ class BEVFormerLayer(MyCustomBaseTransformerLayer):
                 query_key_padding_mask=None,
                 key_padding_mask=None,
                 hybrid_ref_2d=None,
-                ref_2d=None,
+                ref_2d=None,#用于cross attn
                 ref_3d=None,#[B,4,22500,3]
                 bev_h=None,
                 bev_w=None,
