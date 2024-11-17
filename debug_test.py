@@ -64,7 +64,7 @@ cams = [
     ]
 def show_seg(labels, car_img):
 
-    PALETTE = [[255, 255, 255], [220, 20, 60], [0, 0, 128], [0, 100, 0],
+    PALETTE = [[255, 255, 255], [255, 204, 153], [0, 204, 255], [51,0,153],
                [128, 0, 0], [64, 0, 128], [64, 0, 192], [192, 128, 64],
                [192, 192, 128], [64, 64, 128], [128, 0, 192], [192, 0, 64]]
     mask_colors = np.array(PALETTE)
@@ -182,7 +182,7 @@ def single_gpu_vis(model,
                     logger.info(f'saving: {imname}')
                     cv2.imwrite(imname, show_seg(semantic.squeeze(), car_img_cv))
             if result[0]['pts_bbox'] is not None:
-                results.append([result[0]])
+                results.append([dict(pts_bbox=result[0]['pts_bbox'])])
                 # nusc_boxes=format_one_bbox(result[0]['pts_bbox'],data,i)
                 # for ind, cam in enumerate(cams):
                 #     sample_data_token = sample['data'][cam]
@@ -383,7 +383,7 @@ def main():
 
     # build the dataloader
     dataset = build_dataset(cfg.data.test)
-    # dataset.data_infos=dataset.data_infos[:100]
+    dataset.data_infos=dataset.data_infos[:200]
     data_loader = build_dataloader(
         dataset,
         samples_per_gpu=samples_per_gpu,
