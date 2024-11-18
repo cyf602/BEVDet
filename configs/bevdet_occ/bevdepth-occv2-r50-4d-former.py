@@ -108,8 +108,8 @@ model = dict(
         downsample=8),
     formerencoder=dict(
         type='PerceptionTransformer',
-        rotate_prev_bev=True,
-        use_shift=True,
+        rotate_prev_bev=False,
+        use_shift=False,
         use_can_bus=True,
         embed_dims=_dim_,
         encoder=dict(
@@ -128,7 +128,7 @@ model = dict(
                     dict(
                         type='BevCrossAttention',
                         embed_dims=_dim_,
-                        num_levels=3, #bev特征图,本来这里是1
+                        num_levels=3, #bev特征图,本来这里是1,等于输入特征图数量
                     )
                 ],
                 ffn_cfgs=dict(
@@ -233,7 +233,7 @@ train_pipeline = [
         type='Collect3D', keys=['img_inputs', 'gt_depth', 'voxel_semantics','next_voxel_semantics',
                                 'voxel_flow','vismask','dstamp','ego2next_mat'],
                            meta_keys=['box_mode_3d', 'box_type_3d', 'sample_idx', 'pts_filename',
-                                      'relative_trans','relative_rots','timestamp'])
+                                      'relative_trans','relative_rots','cur_rots','timestamp'])
 ]
 
 test_pipeline = [
@@ -260,9 +260,8 @@ test_pipeline = [
                 class_names=class_names,
                 with_label=False),
             dict(type='GetRelative'),
-            dict(type='Collect3D', keys=['points', 'img_inputs','relative_trans',
-                                         'relative_rots'],
-                 meta_keys=['box_mode_3d', 'box_type_3d', #'pts_filename',
+            dict(type='Collect3D', keys=['points', 'img_inputs'],
+                 meta_keys=['box_mode_3d', 'box_type_3d','cur_rots', 'timestamp',
                                       'relative_trans','relative_rots'])
         ])
 ]
@@ -288,7 +287,7 @@ test_data_config = dict(
     ann_file=data_root + 'bevdetv3-nuscenes_infos_val.pkl')
 
 data = dict(
-    samples_per_gpu=2,
+    samples_per_gpu=1,
     workers_per_gpu=4,
     # train=dict(
     #     type='CBGSDataset',
@@ -325,17 +324,35 @@ data['train'].update(share_data_config)
 #     dist_cfg=dict(backend='nccl',timeout=10800),
 # )
 # Optimizer
-optimizer = dict(type='AdamW', lr=1e-4, weight_decay=1e-2)
-optimizer_config = dict(grad_clip=dict(max_norm=5, norm_type=2))
+# optimizer = dict(type='AdamW', lr=1e-4, weight_decay=1e-2)
+# optimizer_config = dict(grad_clip=dict(max_norm=5, norm_type=2))
+# lr_config = dict(
+#     policy='step',
+#     warmup='linear',
+#     warmup_iters=200,
+#     warmup_ratio=0.001,
+#     step=[100,])
+optimizer = dict(
+    type='AdamW',
+    lr=1e-4,#2e-4,
+    paramwise_cfg=dict(
+        custom_keys={
+            'img_backbone': dict(lr_mult=0.1),
+        }),
+    weight_decay=0.01)
+
+optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
+# learning policy
 lr_config = dict(
-    policy='step',
+    policy='CosineAnnealing',
     warmup='linear',
-    warmup_iters=200,
-    warmup_ratio=0.001,
-    step=[100,])
+    warmup_iters=500,
+    warmup_ratio=1.0 / 3,
+    min_lr_ratio=1e-3)
+
 checkpoint_config = dict(interval=1)
-evaluation = dict(interval=20, pipeline=test_pipeline)
-runner = dict(type='EpochBasedRunner', max_epochs=30)
+evaluation = dict(interval=30, pipeline=test_pipeline)
+runner = dict(type='EpochBasedRunner', max_epochs=18)
 
 # custom_hooks = [
 #     dict(
@@ -344,6 +361,6 @@ runner = dict(type='EpochBasedRunner', max_epochs=30)
 #         priority='NORMAL',
 #     ),
 # ]
-resume_from="work_dirs/bevdepthformer_33mask1104/epoch_1.pth"
-# load_from="work_dirs/bevdepth-newmaskt2_33free1022/epoch_30.pth"
+# resume_from="work_dirs/bevdepthformer_noshift_nobevrot_cos1r33mask-1110/epoch_22.pth"
+load_from="work_dirs/bevdepthformer_noshift_nobevrot_cos1r33mask1107/epoch_12.pth"
 # fp16 = dict(loss_scale='dynamic')

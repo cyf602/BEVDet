@@ -191,7 +191,7 @@ class BEVStereo4DOCC(BEVStereo4D):
                 preds_occ = preds_occ.reshape(-1, self.num_classes)
                 loss_occ = self.loss_occ(preds_occ, voxel_semantics,)
                 loss_['loss_occ'] = loss_occ
-        if preds_flow is not None  and self.vis_idx%1000==5 and preds_flow.device==torch.device('cuda:0'):
+        if preds_flow is not None  and self.vis_idx%300==1 and preds_flow.device==torch.device('cuda:0'):
             preds_occ=preds_occ.detach().clone()
             preds_occ=preds_occ.argmax(dim=-1)
             preds_occ=preds_occ.view(-1,H,W,Z)
@@ -203,7 +203,7 @@ class BEVStereo4DOCC(BEVStereo4D):
             vis_bev_view(preds_occ,voxel_semantics,preds_flow,voxel_flow,flowmask=mask,
                             occmask=occmask,save_root=self.show_dir+'mask',idx=self.vis_idx)
             # vis_mask3d(voxel_semantics[0,...],occmask[0,...],pred_occ=preds_occ[0,...],
-            #            pred_flow=preds_flow[0,...],save_idx=self.vis_idx,save_root='vis/vis3d/1030')
+            #            pred_flow=preds_flow[0,...],save_idx=self.vis_idx,save_root='vis/vis3d/1111-1022pth')
             
         return loss_
 
@@ -576,7 +576,7 @@ class BEVDepthformerOCC(BEVDepth4DOCC):
         if formerencoder:
             self.tempformer=build_transformer(formerencoder)#PerceptionTransformer
             # self.tempformer=build_transformer_layer_sequence(formerencoder)#bevformer encoder
-            self.bev_embedding = nn.Embedding(200*200,formerencoder['embed_dims'])
+            self.bev_embedding = nn.Embedding(self.bev_w*self.bev_w,formerencoder['embed_dims'])
                 # self.bev_h * self.bev_w, self.embed_dims)#w,h,256
             # self.query_embedding = nn.Embedding(900,formerencoder['embed_dims']*2)#self.num_query,
                                                 # self.embed_dims * 2)
@@ -656,7 +656,7 @@ class BEVDepthformerOCC(BEVDepth4DOCC):
             # if not img_metas[0]['prev_bev_exists']:
             #     prev_bev = None
             # prev_bev=bev_feat[1].view(bs,-1,w*h).permute(0,2,1)#[B,4e4,512]
-            if i!=self.num_frame-1:#
+            if i!=self.num_frame-1:#非最后一帧 不更新参数
                 istraining=self.training
                 self.eval()
                 with torch.no_grad():
@@ -667,9 +667,9 @@ class BEVDepthformerOCC(BEVDepth4DOCC):
                                     device=bev_queries.device).to(dtype)
                     bev_pos = self.positional_encoding(bev_mask).to(dtype)
                     cur_bev=self.img_bev_encoder_backbone(cur_bev)#多尺度        
-                    # x = [self.img_bev_encoder_neck(bev_feat)]
+                    # cur_bev = [self.img_bev_encoder_neck(cur_bev)]#bevfpn
                     prev_bev=self.tempformer(#这里面就是get bev features
-                        cur_bev,#原为图像特征
+                        cur_bev,#[B,32,16,w200,h200]
                         bev_queries,#[4e4,256]
                         # object_query_embeds,
                         self.bev_h,
@@ -686,13 +686,14 @@ class BEVDepthformerOCC(BEVDepth4DOCC):
                 if istraining:
                     self.train()
             else:
-                cur_bev=bev_feat[:,(j-1)*self.numChannels:j*self.numChannels,...]
+                cur_bev=bev_feat[:,i*self.numChannels:(i+1)*self.numChannels,...]    
+                # cur_bev=bev_feat[:,(j-1)*self.numChannels:j*self.numChannels,...]
                 bev_queries = self.bev_embedding.weight.to(dtype)
                 bev_mask = torch.zeros((bs, self.bev_h, self.bev_w),
                                 device=bev_queries.device).to(dtype)
                 bev_pos = self.positional_encoding(bev_mask).to(dtype)
                 cur_bev=self.img_bev_encoder_backbone(cur_bev)#多尺度            
-                # x = [self.img_bev_encoder_neck(bev_feat)]
+                # cur_bev = [self.img_bev_encoder_neck(cur_bev)]
                 prev_bev=self.tempformer(
                     cur_bev,
                     bev_queries,#[4e4,256]

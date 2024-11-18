@@ -134,8 +134,8 @@ class PerceptionTransformer(BaseModule):
                            for each in kwargs['img_metas']])#遍历 batch
         delta_y = np.array([each['relative_trans'][t_idx][1]
                            for each in kwargs['img_metas']])
-        ego_angle = np.array(
-            [each['relative_rots'][t_idx] / np.pi * 180 for each in kwargs['img_metas']])
+        ego_angle = np.array(#绝对角度
+            [each['cur_rots'][t_idx] / np.pi * 180 for each in kwargs['img_metas']])
         grid_length_y = grid_length[0]
         grid_length_x = grid_length[1]
         translation_length = np.sqrt(delta_x ** 2 + delta_y ** 2)

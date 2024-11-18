@@ -203,7 +203,7 @@ def gen_vis_mask_atT(center,coord_indexs,vismask):
             for t_value in t_values:###遮挡检测
                 indice=np.round(center+t_value*(coord_index-center)).astype(int)
                 if indice[2]>15 or indice[0]>199 or indice[1]>199 or min(indice)<0:
-                    obstacled=True#出界判断？scene~416 43
+                    obstacled=True#出界判断？scene~416/417 42/43
                     break
                 if gt_semantics[indice[0],indice[1],indice[2]]!=16:
                     obstacled=True
@@ -294,12 +294,12 @@ if __name__=="__main__":
         # pcd_gt = process_one_sample(sem_gt, lidar_rays, lidar_origins, flow_gt)#[8*N,4]
 
         # gt_dict=generate_coords(sem_gt, lidar_rays, lidar_origins,flow_gt)
-    ann_file='data/nuscenes/bevdetv3-nuscenes_infos_val.pkl'
+    ann_file='data/nuscenes/bevdetv3-nuscenes_infos_train.pkl'
     print("processing:",ann_file)
     data = mmcv.load(ann_file)
     data_infos = data['infos']
     data_infos=sorted(data_infos,key= lambda x:x['timestamp'])    
-    # data_infos=data_infos[20000:]
+    # data_infos=data_infos[:10000]
     # num_workers=16
     # files_per_worker=len(data_infos)//num_workers
     # sub_files_split=[]

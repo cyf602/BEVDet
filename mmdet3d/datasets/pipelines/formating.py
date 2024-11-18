@@ -275,8 +275,9 @@ class GetRelative(object):
         pass
     
     def __call__(self, results) -> Any:
-        relative_trans=[np.array([0,0,0])]
-        relative_rots=[0.]
+        relative_trans=[np.array([0,0,0])]##can_bus[:3]
+        relative_rots=[0.]#can_bus[-1]
+        cur_rots=[self.checkrot(quaternion_yaw(Quaternion(results['adjacent'][-1]['ego2global_rotation'])))]#can_bus[-2] 0~360
         lenadj=len(results['adjacent'])#从后往前时序
         last_location=np.array(results['adjacent'][-1]['ego2global_translation'])
         last_rotation=self.checkrot(quaternion_yaw(Quaternion(results['adjacent'][-1]['ego2global_rotation'])))
@@ -288,7 +289,7 @@ class GetRelative(object):
             
             relative_trans.append(cur_location-last_location)
             relative_rots.append(cur_rotation-last_rotation)
-            
+            cur_rots.append(cur_rotation)
             last_location=cur_location
             last_rotation=cur_rotation
 
@@ -305,10 +306,12 @@ class GetRelative(object):
         # else:with_prev_frames.append(True)
         cur_location=np.array(results['curr']['ego2global_translation'])
         cur_rotation=self.checkrot(quaternion_yaw(Quaternion(results['curr']['ego2global_rotation'])))
+        cur_rots.append(cur_rotation)  
         relative_trans.append(cur_location-last_location)
         relative_rots.append(cur_rotation-last_rotation)
         results['relative_trans']=relative_trans
         results['relative_rots']=relative_rots
+        results['cur_rots']=cur_rots
         # results['with_prev_frames']=with_prev_frames
         return results
     

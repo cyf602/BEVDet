@@ -80,7 +80,7 @@ class MyCustomBaseTransformerLayer(BaseModule):
                      act_cfg=dict(type='ReLU', inplace=True),
                  ),
                  operation_order=None,
-                 norm_cfg=dict(type='LN'),
+                 norm_cfg=dict(type='BN'),
                  init_cfg=None,
                  batch_first=True,
                  **kwargs):

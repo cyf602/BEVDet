@@ -153,6 +153,7 @@ def vis_mask3d(occ_gt,mask,save_idx=0,pred_occ=None,
     outsave=f'{save_idx}_semgt_masknonfree.txt'
     gtnonfree=(occ_gt!=16).cpu().numpy()
     prnonfree=(pred_occ!=16).cpu().numpy()
+    prfrontclass=(pred_occ<13).cpu().numpy()
     mask=mask.cpu().numpy()
     results = np.hstack((indices[mask*gtnonfree], occ_gt.cpu().numpy()[mask*gtnonfree][:, np.newaxis]))
     np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
@@ -164,6 +165,9 @@ def vis_mask3d(occ_gt,mask,save_idx=0,pred_occ=None,
     np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
     outsave=f'{save_idx}_semgt_nonfree.txt'
     results = np.hstack((indices[gtnonfree], occ_gt.cpu().numpy()[gtnonfree][:, np.newaxis]))
+    np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
+    outsave=f'{save_idx}_sempr_frontclass.txt'
+    results = np.hstack((indices[prfrontclass], pred_occ.cpu().numpy()[prfrontclass][:, np.newaxis]))
     np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
     # outsave=f'{save_idx}_flowpr_nonfree.txt'
     # results = np.hstack((indices[nonfree], pred_flow.cpu().numpy()[nonfree][:, np.newaxis]))
