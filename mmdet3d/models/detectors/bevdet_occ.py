@@ -1,5 +1,5 @@
 # Copyright (c) Phigent Robotics. All rights reserved.
-from tools.utils.vis_bev import vis_bev_view,vis_mask3d
+from tools.utils.vis_bev import vis_bev_view,vis_mask3d,vis_fut_loss
 from .bevdet import BEVStereo4D,BEVDepth4D
 from mmcv.runner import force_fp32
 import torch
@@ -11,7 +11,7 @@ import numpy as np
 from mmdet3d.models.builder import build_neck
 from mmdet.models.losses import FocalLoss
 from mmdet3d.models.occ_loss_utils import CustomFocalLoss
-
+from torch.nn import functional as F
 from mmcv.cnn.bricks.transformer import build_transformer_layer_sequence
 from mmdet.models.utils import build_transformer
 from mmcv.cnn.bricks.transformer import build_positional_encoding
@@ -30,6 +30,7 @@ class BEVStereo4DOCC(BEVStereo4D):
                  pred_occ=True,
                  pred_flow=True,
                  future_flow_loss=None,#下一帧语义损失
+                 pc_range=None,
                  num_extraconv2d=0,
                  flow_bev_encoder_neck=None,#bev fpn处解耦
                  **kwargs):
@@ -47,6 +48,9 @@ class BEVStereo4DOCC(BEVStereo4D):
         #     bias=True,
         #     conv_cfg=dict(type='Conv2d'))
         self.num_extraconv2d=num_extraconv2d
+        self.pc_range=pc_range
+        self.res=(self.pc_range[4]-self.pc_range[0])/self.occupancy_size[0] #体素分辨率
+        self.range_size=torch.tensor([i*self.res for i in self.occupancy_size])
         if pred_occ:
             self.occ_conv = ConvModule(
                             self.img_view_transformer.out_channels,
@@ -126,7 +130,9 @@ class BEVStereo4DOCC(BEVStereo4D):
         if loss_flow is not None:
             self.loss_flow=build_loss(loss_flow)
         if future_flow_loss:
+            self.use_future_loss=True
             self.future_loss=build_loss(future_flow_loss)
+        else:self.use_future_loss=False
         self.class_wise = class_wise
         self.align_after_view_transfromation = False
         self.pred_occ=pred_occ
@@ -142,10 +148,13 @@ class BEVStereo4DOCC(BEVStereo4D):
         xs=torch.linspace(grid_cfg['x'][0]+grid_cfg['x'][2]/2,grid_cfg['x'][1]-grid_cfg['x'][2]/2,X).view(X,1,1).expand(X,Y,Z)#200
         ys=torch.linspace(grid_cfg['y'][0]+grid_cfg['y'][2]/2,grid_cfg['y'][1]-grid_cfg['y'][2]/2,Y).view(1,Y,1).expand(X,Y,Z)#200
         zs=torch.linspace(grid_cfg['z'][0]+grid_cfg['z'][2]/2,grid_cfg['z'][1]-grid_cfg['z'][2]/2,Z).view(1,1,Z).expand(X,Y,Z)#16
-        self.local_voxel_coors=torch.stack((xs,ys,zs),-1).double().repeat(1,1,1,1,1)#para1:batch size=1
+        ones=torch.ones_like(xs)
+        self.local_voxel_coors=torch.stack((xs,ys,zs,ones),-1).double().repeat(1,1,1,1,1)#para1:batch size=1
 
-    def loss_single(self,voxel_semantics,preds_occ,voxel_flow,preds_flow=None,
-                    mask_camera=None):
+    def loss_single(self,voxel_semantics,preds_occ,voxel_flow=None,preds_flow=None,
+                    mask_camera=None,
+                    next_voxel_semantics=None,dstamp=None,transform_martix=None,
+                    past_voxel_semantics=None,past_transform_martix=None):
         loss_ = dict()
         voxel_semantics=voxel_semantics.long().reshape(-1)
         free=(voxel_semantics==self.num_classes-1)    
@@ -164,9 +173,23 @@ class BEVStereo4DOCC(BEVStereo4D):
             # final_mask=(rand_mask*static_vox+~static_vox)*non_free#只监督这些区域
             # final_mask=torch.logical_or((rand_mask*static_class),obj_class)#只监督这些区域
             final_mask=obj_class
+                
             if mask_camera is not None:
                 final_mask=torch.logical_and(final_mask,mask_camera.view(-1))
-            loss_['loss_flow']=self.loss_flow(preds_flow[final_mask], voxel_flow[final_mask],avg_factor=torch.sum(final_mask))
+            if self.use_future_loss:#自监督
+                final_mask=mask_camera
+                B,W,H,Z,_=preds_occ.shape
+                # preds={'occ_results':preds_occ.detach(),'flow_results':preds_flow}
+                fake_past_occ=torch.zeros_like(preds_occ,dtype=torch.float).view(-1,self.num_classes)
+                fake_past_occ[range(voxel_semantics.size(0)),past_voxel_semantics.view(-1).long()]=1.0
+                # loss_inputs={'occ_gt':voxel_semantics.view(B,W,H,Z),'flow_results':voxel_flow,'occ_past':fake_past_occ}
+                # transform_martix=torch.eye(4).to(torch.float64).repeat(B,1,1).to(voxel_flow.device)
+                #occ_past,outs(当前帧GT，当前帧flow)
+                # loss_['loss_flow_t']=self.flow_futureloss(fake_past_occ.view(B,W,H,Z,-1),preds,final_mask,past_transform_martix,dstamp=dstamp)
+                loss_inputs={'occ_gt':voxel_semantics.view(B,W,H,Z),'flow_results':preds_flow,'occ_past':fake_past_occ.view(B,W,H,Z,-1)}
+                loss_['loss_flow_t']=self.flow_futureloss(loss_inputs,final_mask,past_transform_martix,dstamp=dstamp)
+            else:        
+                loss_['loss_flow']=self.loss_flow(preds_flow[final_mask], voxel_flow[final_mask],avg_factor=torch.sum(final_mask))
             #监督visible mask,nonfree
             # final_mask=torch.logical_and(mask_camera.view(-1),non_free)
             # loss_['loss_flow']=5*self.loss_flow(preds_flow[final_mask], voxel_flow[final_mask],avg_factor=torch.sum(final_mask))
@@ -191,7 +214,7 @@ class BEVStereo4DOCC(BEVStereo4D):
                 preds_occ = preds_occ.reshape(-1, self.num_classes)
                 loss_occ = self.loss_occ(preds_occ, voxel_semantics,)
                 loss_['loss_occ'] = loss_occ
-        if preds_flow is not None  and self.vis_idx%300==1 and preds_flow.device==torch.device('cuda:0'):
+        if preds_flow is not None  and self.vis_idx%300==50 and preds_flow.device==torch.device('cuda:0'):
             preds_occ=preds_occ.detach().clone()
             preds_occ=preds_occ.argmax(dim=-1)
             preds_occ=preds_occ.view(-1,H,W,Z)
@@ -207,39 +230,157 @@ class BEVStereo4DOCC(BEVStereo4D):
             
         return loss_
 
+    def custom_cross_entropy_loss(self,preds, target,mask):
+        N=preds.size(0)
+        probs=F.softmax(preds,dim=-1)
+        probs=torch.log(probs[range(N),target])
+        lss=-torch.min()
+        pass
+    
+    # @force_fp32(apply_to=('preds_dicts'))
+    # def flow_futureloss(self,occ_next,outs,final_mask=None,transform_martix=None,dstamp=0.5):
+    #     """
+    #     occ_pred:(B,bevh,bevw,bevz,num_class)当前帧occ预测值//(B,bevh*bevw*bevz,num_class)
+    #     occ_next:(B,bevh,bevw,bevz)下一帧occ预测值/gt,此处作为gt
+    #     flow_pred:(B,bevh,bevw,bevz,2)当前帧flow预测
+    #     dstamp:(B)到下一帧的时间差
+    #     transform_martix:到下一帧的ego坐标转化
+    #     """
+    #     occ_pred,flow_pred=outs['occ_results'],outs['flow_results']
+        
+    #     B,H,W,Z,nc=occ_pred.shape#1,200,200,16,~16
+    #     flow_pred=flow_pred.view(B,H,W,Z,2)
+    #     final_mask=final_mask.view(B,H,W,Z)
+    #     loc_t=self.local_voxel_coors.to(flow_pred.device)
+    #     dstamp=dstamp.view(B,1,1,1)
+    #     # loc_t=self.local_voxel_coors.repeat(B,1,1,1,1).to(flow_pred.device)
+    #     locnext=torch.stack((loc_t[...,0]+flow_pred[...,0]*dstamp,loc_t[...,1]+flow_pred[...,1]*dstamp,loc_t[...,2].repeat(B,1,1,1),torch.ones_like(loc_t[...,0]).repeat(B,1,1,1)),dim=-1)#B, h w z,4
+    #     # loc_t2=torch.matmul(transform_martix[None,None,None,...],locnext.unsqueeze(-1)).squeeze(-1)#下一帧的坐标 [1,1,1,1,4,4]*[B,H,W,Z,4,1]
+    #     loc_t2=torch.einsum('bxy,bwhzy->bwhzx',transform_martix,locnext)#下一帧在当前帧坐标系下坐标
+    #     # mask=(self.pc_range[0]<loc_t2[...,0])&(loc_t2[...,0]<self.pc_range[3])&(self.pc_range[1]<loc_t2[...,1])&(loc_t2[...,1]<self.pc_range[4])&(self.pc_range[2]<loc_t2[...,2])&(loc_t2[...,2]<self.pc_range[5])#[B,w h z]
+    #     loc_t2_idx=((loc_t2[...,:3]-torch.tensor(self.pc_range[:3]).to(flow_pred.device))/self.res).long()# loc_t2 to idx [B,H W Z,3]#最后维度每个元素都是表示
+    #     #出界判断
+    #     mask2=(0<=loc_t2_idx[...,0])&(loc_t2_idx[...,0]<H) \
+    #         &(0<=loc_t2_idx[...,1])&(loc_t2_idx[...,1]<W)\
+    #         &(0<=loc_t2_idx[...,2])&(loc_t2_idx[...,2]<Z)
+    #     mask2*=(final_mask)
+    #     #每个occ_pred都通过对应位置的loc_t2_idx转换成occ_infer_next中对应位置的预测
+    #     h_idx,w_idx,z_idx=loc_t2_idx[...,0].clamp(0,H-1),loc_t2_idx[...,1].clamp(0,W-1),loc_t2_idx[...,0].clamp(0,Z-1)
+    #     b_idx=torch.arange(B)[:,None,None,None]
+    #     # occ_infer_next=torch.zeros(torch.max(h_idx),torch.max(w_idx),torch.max(z_idx))
+    #     # 从nextgt选出对应位置的gt 要用grid_sample
+    #     occ_gt_next2cur=F.grid_sample(occ_next.unsqueeze(1).to(torch.float64),loc_t2[...,:3]/torch.tensor(self.occupancy_size).to(occ_next.device),mode='nearest').unsqueeze(1)
+    #     # occ_infer_next=occ_pred[b_idx,h_idx,w_idx,z_idx,:]#[B,200,200,16,nc]
+    #     occgt_next_corr=occ_next[b_idx,h_idx,w_idx,z_idx]#[B,200,200,16,nc]
+    #     num_valid=torch.sum(mask2)
+    #     if num_valid==0:
+    #         return 0*self.future_loss(occ_infer_next.reshape(-1,nc),occ_next.long().reshape(-1),avg_factor=1)#mask2
+    #     else:
+    #         return self.future_loss(occ_infer_next[mask2],occ_next.long()[mask2],avg_factor=torch.sum(mask2))
+        # if num_valid==0:
+        #     return 0*self.future_loss(occ_pred.reshape(-1,nc),occgt_next_corr.long().reshape(-1),avg_factor=1)#mask2
+        # else:
+        #     return self.future_loss(occ_pred[mask2],occgt_next_corr.long()[mask2],avg_factor=torch.sum(mask2))
+    
     @force_fp32(apply_to=('preds_dicts'))
-    def flow_futureloss(self,occ_next,outs,dstamp=0.5,transform_martix=None):
-        """
-        occ_pred:(B,bevh,bevw,bevz,num_class)当前帧occ预测值//(B,bevh*bevw*bevz,num_class)
-        occ_next:(B,bevh,bevw,bevz)下一帧occ预测值/gt,此处作为gt
+    def flow_futureloss(self,inputs,final_mask=None,transform_martix=None,dstamp=0.5):
+        """反过来，预设当前帧坐标，先减flow(其实是当前帧flow),坐标转换至上一帧，在上一帧predocc采样
+        在上一帧采样,推理出“这一帧occ”,用这一帧occgt监督
+        occ_gt:(B,bevh,bevw,bevz)当前帧occgt
+        occ_past:(B,bevh,bevw,bevz,nc/D)上一帧occ预测值/gt/特征
         flow_pred:(B,bevh,bevw,bevz,2)当前帧flow预测
         dstamp:(B)到下一帧的时间差
         transform_martix:到下一帧的ego坐标转化
         """
-        occ_pred,flow_pred=outs['occ_results'],outs['flow_results']
-        occ_pred=occ_pred.view(-1,self.occ_zdim,self.bev_w,self.bev_h,self.occupancy_classes).permute(0,3,2,1,4)
-        flow_pred=flow_pred.view(-1,self.occ_zdim,self.occ_xdim,self.occ_ydim,self.flow_gt_dimension).permute(0,3,2,1,4)
-        B,H,W,Z,nc=occ_pred.shape#1,200,200,16,~16
-        loc_t=self.local_voxel_coors.to(flow_pred.device)
-        # loc_t=self.local_voxel_coors.repeat(B,1,1,1,1).to(flow_pred.device)
-        locnext=torch.stack((loc_t[...,0]+flow_pred[...,0]*dstamp,loc_t[...,1]+flow_pred[...,1]*dstamp,loc_t[...,2],torch.ones_like(loc_t[...,0])),dim=-1)#B, h w z,4
-        loc_t2=torch.matmul(transform_martix[None,None,None,...],locnext.unsqueeze(-1)).squeeze(-1)#下一帧的坐标 [1,1,1,1,4,4]*[B,H,W,Z,4,1]
-        # mask=(self.pc_range[0]<loc_t2[...,0])&(loc_t2[...,0]<self.pc_range[3])&(self.pc_range[1]<loc_t2[...,1])&(loc_t2[...,1]<self.pc_range[4])&(self.pc_range[2]<loc_t2[...,2])&(loc_t2[...,2]<self.pc_range[5])#[B,w h z]
-        loc_t2_idx=((loc_t2[...,:3]-torch.tensor(self.pc_range[:3]).to(flow_pred.device))/self.occupancy_size[0]).long()# loc_t2 to idx [B,H W Z,3]#最后维度每个元素都是表示
-        mask2=(0<=loc_t2_idx[...,0])&(loc_t2_idx[...,0]<H) \
-            &(0<=loc_t2_idx[...,1])&(loc_t2_idx[...,0]<W)\
-            &(0<=loc_t2_idx[...,2])&(loc_t2_idx[...,2]<Z)
-        mask2*=(occ_next<nc)
-        #每个occ_pred都通过对应位置的loc_t2_idx转换成occ_infer_next中对应位置的预测
-        h_idx,w_idx,z_idx=loc_t2_idx[...,0].clamp(0,H-1),loc_t2_idx[...,1].clamp(0,W-1),loc_t2_idx[...,0].clamp(0,Z-1)
-        b_idx=torch.arange(B)[:,None,None,None]
-        # occ_infer_next=torch.zeros(torch.max(h_idx),torch.max(w_idx),torch.max(z_idx))
-        occ_infer_next=occ_pred[b_idx,h_idx,w_idx,z_idx,:]#[B,200,200,16,nc]
-        num_valid=torch.sum(mask2)
+        occ_past,occ_gt,flow_pred=inputs['occ_past'],inputs['occ_gt'],inputs['flow_results']
+        device=occ_gt.device
+        B,H,W,Z,nc=occ_past.shape#1,200,200,16,~16
+        flow_pred=flow_pred.view(B,H,W,Z,2)
+        final_mask=final_mask.view(B,H,W,Z)
+        dstamp=dstamp.view(B,1,1,1)
+        loc_c2t2=self.local_voxel_coors.repeat(B,1,1,1,1).to(flow_pred.device)#这里是当前帧
+        loc_c2t1=torch.stack((loc_c2t2[...,0]-flow_pred[...,0]*dstamp,loc_c2t2[...,1]-flow_pred[...,1]*dstamp,loc_c2t2[...,2],torch.ones_like(loc_c2t2[...,0])),dim=-1)#B, h w z,4
+        loc_c1t1=torch.einsum('bxy,bwhzy->bwhzx',transform_martix,loc_c2t1)#下一帧在当前帧坐标系下坐标
+        
+        loc_t1_idx=((loc_c1t1[...,:3]-torch.tensor(self.pc_range[:3]).to(flow_pred.device))/self.res).long()
+        #出界判断
+        mask2=(0<=loc_t1_idx[...,0])&(loc_t1_idx[...,0]<H) \
+            &(0<=loc_t1_idx[...,1])&(loc_t1_idx[...,1]<W)\
+            &(0<=loc_t1_idx[...,2])&(loc_t1_idx[...,2]<Z)
+        loc_t1_idx=loc_t1_idx.view(B,-1,3)
+        static_mask=torch.norm(flow_pred,dim=-1)<0.1 #静止体素
+        mask_mov=torch.zeros(B,H,W,Z,dtype=bool,device=device).view(B,-1)
+        for i in range(B):#采样到重复体素的地方
+            unique_X, inverse_indices = torch.unique(loc_t1_idx[i,...], return_inverse=True, dim=0)
+            counts = torch.bincount(inverse_indices)
+            duplicated_indices = torch.nonzero(counts > 1).squeeze() 
+            mask_mov[i,...] |= (torch.isin(inverse_indices, duplicated_indices))
+        mask_mov=torch.logical_and(mask_mov.view(B,H,W,Z),static_mask)
+        mask_mov_pad=F.pad(mask_mov,(1,1,1,1,1,1),mode='constant',value=False)
+        for dh,dw,dz in ((1,1,1),(1,1,-1),(1,-1,1),(-1,1,1),(1,-1,-1),(-1,1,-1),(-1,-1,1),(-1,-1,-1)):
+            mask_mov |= mask_mov_pad[:,dh+1:dh+W+1,dw+1:dw+H+1,dz+1:dz+Z+1]
+        mask_dup_static=~mask_mov#静止且重复的为F,不监督
+        # mask2*=(final_mask)
+        # 从nextoccgt选出对应位置的当前occpr 要用grid_sample https://blog.csdn.net/qq_40968179/article/details/128093033
+        move2grid=(-torch.tensor([self.pc_range[:3]])-0.5*self.range_size).to(flow_pred.device)
+        loc_t_grid=loc_c1t1[...,:3]+move2grid
+        loc_t_grid=loc_t_grid/(0.5*self.range_size.to(flow_pred.device))#locate坐标为体素中心
+        occ_infer_cur=F.grid_sample(occ_past.permute(0,4,3,2,1).to(torch.float64),loc_t_grid[...,:3],mode='bilinear',align_corners=False).permute(0,2,3,4,1)
+        # occ_infer_past=occ_pred[b_idx,h_idx,w_idx,z_idx,:]#[B,200,200,16,nc]
+        final_mask_past=F.grid_sample(final_mask.unsqueeze(-1).permute(0,4,3,2,1).to(torch.float64),loc_t_grid[...,:3],mode='nearest',align_corners=False).permute(0,2,3,4,1).squeeze(-1).bool()
+        final_mask_past*=(mask_dup_static*mask2)
+        num_valid=torch.sum(final_mask_past)
+        # if flow_pred.device==torch.device('cuda:0'):
+        #     res_past=torch.argmax(occ_past,dim=-1)
+        #     occ_infer_cur_res=torch.argmax(occ_infer_cur,dim=-1)
+        #     vis_fut_loss(res_past[0,...],occ_infer_cur_res[0,...],occ_pred[0,...],final_mask_past[0,...])
         if num_valid==0:
-            return 0*self.future_loss(occ_infer_next.reshape(-1,nc),occ_next.long().reshape(-1),avg_factor=1)#mask2
+            return 0*self.future_loss(occ_infer_cur.reshape(-1,nc),occ_gt.long().reshape(-1),avg_factor=1)#mask2
         else:
-            return self.future_loss(occ_infer_next[mask2],occ_next.long()[mask2],avg_factor=torch.sum(mask2))
+            return self.future_loss(occ_infer_cur[final_mask_past].reshape(-1,nc),occ_gt.long()[final_mask_past].reshape(-1),avg_factor=num_valid)
+    
+    # @force_fp32(apply_to=('preds_dicts'))
+    # def flow_futureloss(self,occ_next,outs,final_mask=None,transform_martix=None,dstamp=0.5):
+    #     """反过来，预设下一帧坐标，先转t-1坐标系，在减去flow，在当前帧predocc采样
+    #     occ_pred:(B,bevh,bevw,bevz,num_class)当前帧occ预测值//(B,bevh*bevw*bevz,num_class)
+    #     occ_next:(B,bevh,bevw,bevz)下一帧occ预测值/gt,此处作为gt
+    #     flow_pred:(B,bevh,bevw,bevz,2)当前帧flow预测
+    #     dstamp:(B)到下一帧的时间差
+    #     transform_martix:到下一帧的ego坐标转化
+    #     """
+    #     occ_pred,flow_pred=outs['occ_results'],outs['flow_results']
+        
+    #     B,H,W,Z,nc=occ_pred.shape#1,200,200,16,~16
+    #     flow_pred=flow_pred.view(B,H,W,Z,2)
+    #     final_mask=final_mask.view(B,H,W,Z)
+    #     loc_t2=self.local_voxel_coors.repeat(B,1,1,1,1).to(flow_pred.device)
+    #     locnext=torch.einsum('bxy,bwhzy->bwhzx',transform_martix.inverse(),loc_t2)#下一帧在当前帧坐标系下坐标
+        
+    #     dstamp=dstamp.view(B,1,1,1)
+    #     # loc_t=self.local_voxel_coors.repeat(B,1,1,1,1).to(flow_pred.device)
+    #     loc_t=torch.stack((locnext[...,0]-flow_pred[...,0]*dstamp,locnext[...,1]-flow_pred[...,1]*dstamp,locnext[...,2],torch.ones_like(locnext[...,0])),dim=-1)#B, h w z,4
+    #     # loc_t2_idx=((loc_t2[...,:3]-torch.tensor(self.pc_range[:3]).to(flow_pred.device))/self.res).long()# loc_t2 to idx [B,H W Z,3]#最后维度每个元素都是表示
+    #     # #出界判断
+    #     # mask2=(0<=loc_t2_idx[...,0])&(loc_t2_ide/    x[...,0]<H) \
+    #     #     &(0<=loc_t2_idx[...,1])&(loc_t2_idx[...,1]<W)\
+    #     #     &(0<=loc_t2_idx[...,2])&(loc_t2_idx[...,2]<Z)
+    #     # mask2*=(final_mask)
+    #     # 从nextoccgt选出对应位置的当前occpr 要用grid_sample https://blog.csdn.net/qq_40968179/article/details/128093033
+    #     move2grid=(-torch.tensor([self.pc_range[:3]])-0.5*self.range_size).to(flow_pred.device)
+    #     loc_t_grid=loc_t[...,:3]+move2grid
+    #     loc_t_grid=loc_t_grid/(0.5*self.range_size.to(flow_pred.device))#loca坐标为体素中心
+    #     occ_infer_next=F.grid_sample(occ_pred.permute(0,4,3,2,1).to(torch.float64),loc_t_grid[...,:3],mode='nearest',align_corners=False).permute(0,2,3,4,1)
+    #     # occ_infer_next=occ_pred[b_idx,h_idx,w_idx,z_idx,:]#[B,200,200,16,nc]
+    #     final_mask_next=F.grid_sample(final_mask.unsqueeze(1).to(torch.float64),loc_t_grid[...,:3],mode='nearest',align_corners=False).squeeze(1).bool()
+    #     num_valid=torch.sum(final_mask_next)
+    #     if flow_pred.device==torch.device('cuda:0'):
+    #         res=torch.argmax(occ_pred,dim=-1)
+    #         occ_infer_next_res=torch.argmax(occ_infer_next,dim=-1)
+    #         vis_fut_loss(res[0,...],occ_infer_next_res[0,...],occ_next[0,...])
+    #     if num_valid==0:
+    #         return 0*self.future_loss(occ_infer_next.reshape(-1,nc),occ_next.long().reshape(-1),avg_factor=1)#mask2
+    #     else:
+    #         return self.future_loss(occ_infer_next[final_mask_next].reshape(-1,nc),occ_next.long()[final_mask_next].reshape(-1),avg_factor=num_valid)
         
     def simple_test(self,
                     points,
@@ -359,13 +500,16 @@ class BEVStereo4DOCC(BEVStereo4D):
             flow_pred=None
         voxel_semantics = kwargs['voxel_semantics']#[B,200,200,16]
         voxel_flow=kwargs.get('voxel_flow',None)
-        # dstamp=kwargs.get('dstamp',None)
-        # ego2next_mat=kwargs.get('ego2next_mat',None)
-        
+        dstamp=kwargs.get('dstamp',None)
+        dstamp2past=kwargs.get('dstamp2past',None)
+        ego2next_mat=kwargs.get('ego2next_mat',None)
+        ego2past_mat=kwargs.get('ego2past_mat',None)
+        next_voxel_semantics=kwargs.get('next_voxel_semantics',None)
+        past_voxel_semantics=kwargs.get('past_voxel_semantics',None)
         # mask_camera = kwargs.get('maxk_camera',None)
         vismask=kwargs.get('vismask',None)
         assert voxel_semantics.min() >= 0 and voxel_semantics.max() <= 17
-        loss_occ = self.loss_single(voxel_semantics, occ_pred,voxel_flow,flow_pred,mask_camera=vismask)
+        loss_occ = self.loss_single(voxel_semantics, occ_pred,voxel_flow,flow_pred,mask_camera=vismask,next_voxel_semantics=next_voxel_semantics,dstamp=dstamp2past,transform_martix=ego2next_mat,past_transform_martix=ego2past_mat,past_voxel_semantics=past_voxel_semantics)       
         losses.update(loss_occ)
         # if self.vis_idx%100==5 and self.show_dir is not None and device == torch.device('cuda:0'):
         #     if occ_pred is not None:

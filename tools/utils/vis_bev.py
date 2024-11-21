@@ -7,6 +7,7 @@ from datetime import datetime
 now=datetime.now()
 time_str = now.strftime("%Y-%m-%d-%H:%M:%S")
 white_board=np.ones((200,200,3))*255
+general_idx=0
 colors_map=np.array([
             [0, 150, 245, 255],  # car                  blue
             [160, 32, 240, 255],  # truck                purple
@@ -173,5 +174,33 @@ def vis_mask3d(occ_gt,mask,save_idx=0,pred_occ=None,
     # results = np.hstack((indices[nonfree], pred_flow.cpu().numpy()[nonfree][:, np.newaxis]))
     # np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
     
+def vis_fut_loss(occpr,occpr_next,occgt_next,final_mask_past=None,save_root='vis/vis3d/fut'):
+    global general_idx
+    if not os.path.exists(save_root):
+        os.mkdir(save_root)
+    X,Y,Z=200,200,16
+    voxel_size=0.4
+    indices = np.indices((X, Y, Z))#[3,x,y,z]
+    indices=np.transpose(indices,(1,2,3,0))
+    indices=indices*voxel_size
+    prnonfree=(occpr!=16).cpu().numpy()
+    outsave=f'{general_idx}_sempr_t_nonfree.txt'
+    results = np.hstack((indices[prnonfree], occpr.cpu().numpy()[prnonfree][:, np.newaxis]))
+    np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
+    outsave=f'{general_idx}_sempr_next_nonfree.txt'
+    prnextnonfree=(occpr_next!=16).cpu().numpy()
+    results = np.hstack((indices[prnextnonfree], occpr_next.cpu().numpy()[prnextnonfree][:, np.newaxis]))
+    np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
+    gtnextnonfree=(occgt_next!=16).cpu().numpy()
+    outsave=f'{general_idx}_semgt_next_nonfree.txt'
+    results = np.hstack((indices[gtnextnonfree], occgt_next.cpu().numpy()[gtnextnonfree][:, np.newaxis]))
+    np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
+    print("save_vis_fut_loss ",general_idx)
+    if final_mask_past is not None:
+        final_mask_past=final_mask_past.cpu().numpy()
+        outsave=f'{general_idx}_sempr_next_nonfree_mask.txt'
+        results = np.hstack((indices[prnextnonfree*final_mask_past], occpr_next.cpu().numpy()[prnextnonfree*final_mask_past][:, np.newaxis]))
+        np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
+    general_idx+=1
     
     

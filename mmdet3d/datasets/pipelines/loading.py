@@ -80,11 +80,17 @@ class LoadOccGTFromFilev2(LoadTempOccGTFromFile):
         results['voxel_flow']=occ_labels['flow']
         results['vismask']=occ_labels['vismask']
         next_occgt_path=results.get('next_occv2_path',None)
+        past_occgt_path=results.get('past_occv2_path',None)
         if next_occgt_path:
             occ_next_gt_path = os.path.join(next_occgt_path, "labels.npz")
             results['next_voxel_semantics']=np.load(occ_next_gt_path)['semantics']
         else:
             results['next_voxel_semantics']=16*np.ones_like(occ_labels['semantics'])
+        if past_occgt_path:
+            occ_past_gt_path = os.path.join(past_occgt_path, "labels.npz")
+            results['past_voxel_semantics']=np.load(occ_past_gt_path)['semantics']
+        else:
+            results['past_voxel_semantics']=16*np.ones_like(occ_labels['semantics'])
         return results     
     
 @PIPELINES.register_module()
@@ -1461,9 +1467,17 @@ class BEVAugv2(BEVAug):
                 results['voxel_flow'] = results['voxel_flow'][::-1,...].copy()#
                 results['voxel_flow'][...,0] = -results['voxel_flow'][...,0].copy()
                 results['vismask']=results['vismask'][::-1,...].copy()
+                if 'next_voxel_semantics' in results:
+                    results['next_voxel_semantics']=results['next_voxel_semantics'][::-1,...].copy()
+                if 'past_voxel_semamtics' in results:
+                    results['past_voxel_semamtics']=results['past_voxel_semamtics'][::-1,...].copy()
             if flip_dy:
                 results['voxel_semantics'] = results['voxel_semantics'][:,::-1,...].copy()
                 results['voxel_flow'] = results['voxel_flow'][:,::-1,...].copy()
                 results['voxel_flow'][...,1] = -results['voxel_flow'][...,1].copy()
                 results['vismask']=results['vismask'][:,::-1,...].copy()
+                if 'next_voxel_semantics' in results:
+                    results['next_voxel_semantics']=results['next_voxel_semantics'][:,::-1,...].copy()
+                if 'past_voxel_semamtics' in results:
+                    results['past_voxel_semamtics']=results['past_voxel_semamtics'][:,::-1,...].copy()
         return results

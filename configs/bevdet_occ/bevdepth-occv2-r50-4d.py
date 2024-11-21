@@ -78,8 +78,9 @@ model = dict(
     align_after_view_transfromation=False,
     num_adj=len(range(*multi_adj_frame_id_cfg)),
     num_extraconv2d=0,#conv2d nums in head
-    pred_flow=True,
+    pred_flow=False,
     pred_occ=True,
+    pc_range=[grid_config['x'][0],grid_config['y'][0],grid_config['z'][0],grid_config['x'][1],grid_config['y'][1],grid_config['z'][1]],
     img_backbone=dict(
         # pretrained='torchvision://resnet50',
         pretrained='ckpts/resnet101-5d3b4d8f.pth',
@@ -142,6 +143,10 @@ model = dict(
         type='CrossEntropyLoss',
         use_sigmoid=False,
         loss_weight=1.0),#class_weight=[0.3, 2.0, 2.0, 2.0]
+    future_flow_loss=dict(
+        type='CrossEntropyLoss',
+        use_sigmoid=False,
+        loss_weight=1.0),
     # loss_occ=dict(
     #         type='FocalLoss',
     #         use_sigmoid=True,
@@ -161,8 +166,8 @@ file_client_args = dict(backend='disk')
 bda_aug_conf = dict(
     rot_lim=(-0., 0.),
     scale_lim=(1., 1.),
-    flip_dx_ratio=0.,
-    flip_dy_ratio=0.)
+    flip_dx_ratio=0.5,
+    flip_dy_ratio=0.5)
 
 train_pipeline = [
     dict(
@@ -187,7 +192,8 @@ train_pipeline = [
     dict(type='DefaultFormatBundle3D', class_names=class_names),
     dict(
         type='Collect3D', keys=['img_inputs', 'gt_depth', 'voxel_semantics','next_voxel_semantics',
-                                'voxel_flow','vismask','dstamp','ego2next_mat'])
+                                'voxel_flow','vismask','dstamp','dstamp2past','ego2next_mat',
+                                'past_voxel_semantics','ego2past_mat'])
 ]
 
 test_pipeline = [
@@ -238,7 +244,7 @@ test_data_config = dict(
     ann_file=data_root + 'bevdetv3-nuscenes_infos_val.pkl')
 
 data = dict(
-    samples_per_gpu=4,
+    samples_per_gpu=2,
     workers_per_gpu=4,
     # train=dict(
     #     type='CBGSDataset',
@@ -282,7 +288,8 @@ lr_config = dict(
     warmup='linear',
     warmup_iters=200,
     warmup_ratio=0.001,
-    step=[100,])
+    gamma=0.2,
+    step=[24,])
 checkpoint_config = dict(interval=1)
 evaluation = dict(interval=3, pipeline=test_pipeline)
 runner = dict(type='EpochBasedRunner', max_epochs=30)
@@ -295,5 +302,6 @@ runner = dict(type='EpochBasedRunner', max_epochs=30)
 #     ),
 # ]
 # resume_from="work_dirs/bevdepth-newmaskt2_50free_1029/epoch_21.pth"
-resume_from="work_dirs/bevdepth-newmaskt2_1024/epoch_10.pth"
+# resume_from="work_dirs/bevdepth-augflip-11112mask-1117/epoch_15.pth"
+# resume_from="work_dirs/bevdepth-newmaskt2_1024/epoch_10.pth"
 # fp16 = dict(loss_scale='dynamic')

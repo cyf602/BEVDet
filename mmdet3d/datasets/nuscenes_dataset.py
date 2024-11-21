@@ -212,8 +212,10 @@ class NuScenesDataset(Custom3DDataset):
         stamps=[data_info['timestamp']/1e6 for data_info in data_infos]
         dstamps=[stamps[i+1]-stamps[i] for i in range(len(stamps)-1)]#time gap to next frame
         dstamps.append(1e9)#最后一帧
-        for i,dstamp in enumerate(dstamps):
-            data_infos[i]['dstamp']=dstamp 
+        dstamps.insert(0,1e9)#最后一帧
+        for i in range(len(data_infos)):
+            data_infos[i]['dstamp2past']=dstamps[i]#到上一帧时间差
+            data_infos[i]['dstamp']=dstamps[i+1]#到下一帧时间差            
         return data_infos
 
     def get_data_info(self, index):

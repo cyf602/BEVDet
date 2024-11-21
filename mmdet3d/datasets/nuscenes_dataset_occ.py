@@ -145,14 +145,23 @@ class NuScenesDatasetOccpancyv2(NuScenesDatasetOccpancy):#for openoccv2
         # input_dict['occv2_gt_path'] = self.data_infos[index]['occ_path'].replace('gts','openocc_v2')
         input_dict['occv2_gt_path'] = self.data_infos[index]['occv2_path']
         input_dict['dstamp']=self.data_infos[index]['dstamp']
-        # if input_dict['dstamp']<1:
-        #     input_dict['next_occv2_path']=self.data_infos[index+1]['occv2_path']
-        #     next_global2ego_mat=transform_matrix(translation=self.data_infos[index+1]['ego2global_translation'], rotation=Quaternion(self.data_infos[index+1]['ego2global_rotation']),inverse=True)
-        #     ego2global_mat=transform_matrix(translation=self.data_infos[index]['ego2global_translation'],rotation=Quaternion(self.data_infos[index]['ego2global_rotation']))
-        #     input_dict['ego2next_mat']=ego2global_mat@next_global2ego_mat
-        # else:
-        #     input_dict['next_occv2_path']=None
-        #     input_dict['ego2next_mat']=transform_matrix(translation=self.data_infos[index]['ego2global_translation'],rotation=Quaternion(self.data_infos[index]['ego2global_rotation']))#不为None避免报错
+        input_dict['dstamp2past']=self.data_infos[index]['dstamp2past']
+        if input_dict['dstamp']<1:
+            input_dict['next_occv2_path']=self.data_infos[index+1]['occv2_path']
+            next_global2ego_mat=transform_matrix(translation=self.data_infos[index+1]['ego2global_translation'], rotation=Quaternion(self.data_infos[index+1]['ego2global_rotation']),inverse=True)
+            ego2global_mat=transform_matrix(translation=self.data_infos[index]['ego2global_translation'],rotation=Quaternion(self.data_infos[index]['ego2global_rotation']))
+            input_dict['ego2next_mat']=next_global2ego_mat@ego2global_mat
+        else:
+            input_dict['next_occv2_path']=None
+            input_dict['ego2next_mat']=transform_matrix(translation=self.data_infos[index]['ego2global_translation'],rotation=Quaternion(self.data_infos[index]['ego2global_rotation']))#不为None避免报错
+        if input_dict['dstamp2past']<1:
+            input_dict['past_occv2_path']=self.data_infos[index-1]['occv2_path']
+            past_global2ego_mat=transform_matrix(translation=self.data_infos[index-1]['ego2global_translation'], rotation=Quaternion(self.data_infos[index-1]['ego2global_rotation']),inverse=True)
+            ego2global_mat=transform_matrix(translation=self.data_infos[index]['ego2global_translation'],rotation=Quaternion(self.data_infos[index]['ego2global_rotation']))
+            input_dict['ego2past_mat']=past_global2ego_mat@ego2global_mat
+        else:
+            input_dict['past_occv2_path']=None
+            input_dict['ego2past_mat']=transform_matrix(translation=self.data_infos[index]['ego2global_translation'],rotation=Quaternion(self.data_infos[index]['ego2global_rotation']))            
         return input_dict
     
     def evaluate_miou(self, occ_results, runner=None, show_dir=None, **eval_kwargs):
