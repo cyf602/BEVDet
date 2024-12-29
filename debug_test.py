@@ -383,7 +383,7 @@ def main():
 
     # build the dataloader
     dataset = build_dataset(cfg.data.test)
-    dataset.data_infos=dataset.data_infos[:200]
+    dataset.data_infos=dataset.data_infos[:100]
     data_loader = build_dataloader(
         dataset,
         samples_per_gpu=samples_per_gpu,
@@ -428,7 +428,9 @@ def main():
         #outputs = custom_multi_gpu_test(model, data_loader, args.tmpdir, args.gpu_collect)
         outputs = multi_gpu_test(model, data_loader, args.tmpdir,
                                         args.gpu_collect)
-    outputs=single_gpu_vis(model, data_loader, args.show, args.show_dir)
+    if not os.path.exists(args.show_dir):
+        os.makedirs(args.show_dir)
+    outputs=single_gpu_vis(model, data_loader, show=args.show, out_dir=args.show_dir)
     rank, _ = get_dist_info()
     if rank == 0:
     #     if args.out:
@@ -441,7 +443,19 @@ def main():
         # if args.format_only:
         result_files, tmp_dir=data_loader.dataset.format_results(outputs, **kwargs)
         print(result_files,tmp_dir)#json路径，None
-
+        
+        # eval_kwargs = cfg.get('evaluation', {}).copy()
+        # print(eval_kwargs)
+        # print('.................')
+        # # hard-code way to remove EvalHook args
+        # for key in [
+        #         'interval', 'tmpdir', 'start', 'gpu_collect', 'save_best',
+        #         'rule'
+        # ]:
+        #     eval_kwargs.pop(key, None)
+        # eval_kwargs.update(dict(metric=args.eval, **kwargs))
+        # print(eval_kwargs)
+        # print(dataset.evaluate(outputs, **eval_kwargs))
     #     if args.eval:
     #         eval_kwargs = cfg.get('evaluation', {}).copy()
     #         print(eval_kwargs)

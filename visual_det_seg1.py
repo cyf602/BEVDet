@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 from nuscenes.utils.data_classes import LidarPointCloud, Box
 from PIL import Image
 from matplotlib import rcParams
-
+from copy import deepcopy
 
 
 cams = ['CAM_FRONT',
@@ -29,26 +29,31 @@ cams = ['CAM_FRONT',
  'CAM_FRONT_LEFT']
 
 
-pred_seg_path = 'work_dirs/vis_results'
+pred_seg_path = 'work_dirs/vis_results'#bevformer
+# pred_seg_path = 'work_dirs/vis_results/loadmulv1117'
 
+# det_grid_conf = {
+#     'xbound': [-51.2, 51.2, 0.64],
+#     'ybound': [-51.2, 51.2, 0.64],
+# }
 det_grid_conf = {
-    'xbound': [-51.2, 51.2, 0.00],
-    'ybound': [-51.2, 51.2, 0.00],
+    'xbound': [-41.2, 41.2, 0.64],#h
+    'ybound': [-31.2, 31.2, 0.64],#w
 }
-
 map_grid_conf = {
     'xbound': [-30.0, 30.0, 0.15],
     'ybound': [-15.0, 15.0, 0.15],
 }
-
+hwratio=det_grid_conf['xbound'][1]/det_grid_conf['ybound'][1]
 def padding_seg_to_det(path):
 
     seg = cv2.imread(path)
-    h, w, _ = seg.shape
+    h, w, _ = seg.shape#[200,400]
 
+    # det_w = int((det_grid_conf['xbound'][1] - det_grid_conf['xbound'][0])/(map_grid_conf['xbound'][1] - map_grid_conf['xbound'][0]) * w)
+    # det_h = int((det_grid_conf['ybound'][1] - det_grid_conf['ybound'][0])/(map_grid_conf['ybound'][1] - map_grid_conf['ybound'][0]) * h)
     det_w = int((det_grid_conf['xbound'][1] - det_grid_conf['xbound'][0])/(map_grid_conf['xbound'][1] - map_grid_conf['xbound'][0]) * w)
     det_h = det_w
-
     new_img = np.zeros((det_h, det_w, 3))
     new_img = np.where(new_img == 0, 255, 0)
     new_img[det_h // 2 - h // 2: det_h // 2 + h//2, det_w // 2 - w // 2: det_w // 2 + w//2, :] = seg
@@ -76,7 +81,68 @@ def visualize_sample(nusc: NuScenes,
     """
 
     # seg map
-    seg_map = padding_seg_to_det(os.path.join(pred_seg_path, sample_token + '.png'))
+    seg_map = padding_seg_to_det(os.path.join(pred_seg_path, sample_token + '.png'))#[h,w,3]
+    seg_map = np.ascontiguousarray(seg_map, dtype=np.uint8)
+
+    # Retrieve sensor & pose records.
+    sample_rec = nusc.get('sample', sample_token)
+    sd_record = nusc.get('sample_data', sample_rec['data']['LIDAR_TOP'])
+    cs_record = nusc.get('calibrated_sensor', sd_record['calibrated_sensor_token'])
+    pose_record = nusc.get('ego_pose', sd_record['ego_pose_token'])
+
+    # Get boxes.
+    boxes_gt_global = gt_boxes[sample_token]
+    boxes_est_global = pred_boxes[sample_token]
+
+    # Map GT boxes to lidar.
+    boxes_gt = boxes_to_sensor(boxes_gt_global, pose_record, cs_record)
+
+    # Map EST boxes to lidar.
+    boxes_est = boxes_to_sensor(boxes_est_global, pose_record, cs_record)
+
+    # Add scores to EST boxes.
+    for box_est, box_est_global in zip(boxes_est, boxes_est_global):
+        box_est.score = box_est_global.detection_score
+
+    # Show GT boxes.
+    # for box in boxes_gt:
+    #     view = np.array([[seg_map.shape[1]//(det_grid_conf['ybound'][1]*2), 0, 0, seg_map.shape[1]/2],
+    #                      [0, -seg_map.shape[0]//(det_grid_conf['xbound'][1]*2), 0, seg_map.shape[0]/2],
+    #                      [0, 0, 1, 0], [0, 0, 0, 1]])
+    #     box.render_cv2(seg_map, view=view, colors=((0, 0, 255), (0, 0, 255), (0, 0, 255)), linewidth=2)
+
+    # Show EST boxes.
+    for box in boxes_est:
+        # Show only predictions with a high score.
+        assert not np.isnan(box.score), 'Error: Box score cannot be NaN!'
+        if box.score >= conf_th:
+            view = np.array([[seg_map.shape[1] // (det_grid_conf['ybound'][1] * 2), 0, 0, seg_map.shape[1] / 2],
+                             [0, -seg_map.shape[0] // (det_grid_conf['xbound'][1] * 2), 0, seg_map.shape[0] / 2],
+                             [0, 0, 1, 0], [0, 0, 0, 1]])
+            box.render_cv2(seg_map, view=view, normalize=False, colors=((255, 0, 0), (255, 0, 0), (255, 0, 0)), linewidth=2)
+
+    return seg_map
+
+def visualize_sample_gt(nusc: NuScenes,
+                     sample_token: str,
+                     gt_boxes: EvalBoxes,
+                     pred_boxes: EvalBoxes,
+                     conf_th: float = 0.30,) -> None:
+    """
+    Visualizes a sample from BEV with annotations and detection results.
+    :param nusc: NuScenes object.
+    :param sample_token: The nuScenes sample token.
+    :param gt_boxes: Ground truth boxes grouped by sample.
+    :param pred_boxes: Prediction grouped by sample.
+    :param nsweeps: Number of sweeps used for lidar visualization.
+    :param conf_th: The confidence threshold used to filter negatives.
+    :param eval_range: Range in meters beyond which boxes are ignored.
+    :param verbose: Whether to print to stdout.
+    :param savepath: If given, saves the the rendering here instead of displaying.
+    """
+
+    # seg map
+    seg_map = padding_seg_to_det(os.path.join(pred_seg_path, sample_token + '_gt.png'))
     seg_map = np.ascontiguousarray(seg_map, dtype=np.uint8)
 
     # Retrieve sensor & pose records.
@@ -101,20 +167,10 @@ def visualize_sample(nusc: NuScenes,
 
     # Show GT boxes.
     for box in boxes_gt:
-        view = np.array([[seg_map.shape[0]//(det_grid_conf['xbound'][1]*2), 0, 0, seg_map.shape[0]/2],
+        view = np.array([[seg_map.shape[1]//(det_grid_conf['ybound'][1]*2), 0, 0, seg_map.shape[1]/2],
                          [0, -seg_map.shape[0]//(det_grid_conf['xbound'][1]*2), 0, seg_map.shape[0]/2],
                          [0, 0, 1, 0], [0, 0, 0, 1]])
         box.render_cv2(seg_map, view=view, colors=((0, 0, 255), (0, 0, 255), (0, 0, 255)), linewidth=2)
-
-    # Show EST boxes.
-    for box in boxes_est:
-        # Show only predictions with a high score.
-        assert not np.isnan(box.score), 'Error: Box score cannot be NaN!'
-        if box.score >= conf_th:
-            view = np.array([[seg_map.shape[0] // (det_grid_conf['xbound'][1] * 2), 0, 0, seg_map.shape[0] / 2],
-                             [0, -seg_map.shape[0] // (det_grid_conf['xbound'][1] * 2), 0, seg_map.shape[0] / 2],
-                             [0, 0, 1, 0], [0, 0, 0, 1]])
-            box.render_cv2(seg_map, view=view, normalize=False, colors=((255, 0, 0), (255, 0, 0), (255, 0, 0)), linewidth=1)
 
     return seg_map
 
@@ -336,7 +392,7 @@ def get_predicted_data(sample_data_token: str,
             #  Move box to sensor coord system.
             box.translate(-np.array(cs_record['translation']))
             box.rotate(Quaternion(cs_record['rotation']).inverse)
-        box.center=box.center*1.25
+
         if sensor_record['modality'] == 'camera' and not \
                 box_in_image(box, cam_intrinsic, imsize, vis_level=box_vis_level):
             continue
@@ -389,7 +445,7 @@ def lidiar_render(sample_token, data, out_path=None):
     pred_annotations.add_boxes(sample_token, bbox_pred_list)
     # print('green is ground truth')
     # print('blue is the predited result')
-    return visualize_sample(nusc, sample_token, gt_annotations, pred_annotations)# savepath=out_path+'_bev')
+    return [visualize_sample(nusc, sample_token, gt_annotations, pred_annotations),visualize_sample_gt(nusc, sample_token, gt_annotations, pred_annotations)]# savepath=out_path+'_bev')
 
 
 def get_color(category_name: str):
@@ -457,8 +513,10 @@ def render_sample_data(
         to False, the colors of the lidar data represent the distance from the center of the ego vehicle.
         If show_lidarseg is True, show_panoptic will be set to False.
     """
+    if sample_toekn not in ('5ea654e6b56a457093b835dbf8c886e4','5abd3d15e63c44a8a8189a6e70a496ef','c359678db3e0441397c0d631f98ec7e1'):
+        return
     assert sample_toekn + '.png' in seg_list, '分割图必须存在！'
-    lidar_img = lidiar_render(sample_toekn, pred_data, out_path=out_path)
+    lidar_img,lidar_img_gt = lidiar_render(sample_toekn, deepcopy(pred_data), out_path=out_path)
 
     sample = nusc.get('sample', sample_toekn)
     # sample = data['results'][sample_token_list[0]][0]
@@ -471,71 +529,6 @@ def render_sample_data(
         'CAM_BACK_RIGHT',
     ]
     result_data = []
-    
-    # pred_res = res['results'][infos['token']]
-    # pred_boxes = [
-    #     pred_res[rid]['translation'] + pred_res[rid]['size'] + [
-    #         Quaternion(pred_res[rid]['rotation']).yaw_pitch_roll[0] +
-    #         np.pi / 2
-    #     ] for rid in range(len(pred_res))
-    # ]
-    # if len(pred_boxes) == 0:
-    #     corners_lidar = np.zeros((0, 3), dtype=np.float32)
-    # else:
-    #     pred_boxes = np.array(pred_boxes, dtype=np.float32)
-    #     boxes = LB(pred_boxes, origin=(0.5, 0.5, 0.0))
-    #     corners_global = boxes.corners.numpy().reshape(-1, 3)
-    #     corners_global = np.concatenate(
-    #         [corners_global,
-    #             np.ones([corners_global.shape[0], 1])],
-    #         axis=1)
-    #     l2g = get_lidar2global(infos)
-    #     corners_lidar = corners_global @ np.linalg.inv(l2g).T
-    #     corners_lidar = corners_lidar[:, :3]
-    # pred_flag = np.ones((corners_lidar.shape[0] // 8, ), dtype=np.bool)
-    # scores = [
-    #     pred_res[rid]['detection_score'] for rid in range(len(pred_res))
-    # ]
-    # # if args.draw_gt:
-    # #     gt_boxes = infos['gt_boxes']
-    # #     gt_boxes[:, -1] = gt_boxes[:, -1] + np.pi / 2
-    # #     width = gt_boxes[:, 4].copy()
-    # #     gt_boxes[:, 4] = gt_boxes[:, 3]
-    # #     gt_boxes[:, 3] = width
-    # #     corners_lidar_gt = \
-    # #         LB(infos['gt_boxes'],
-    # #             origin=(0.5, 0.5, 0.5)).corners.numpy().reshape(-1, 3)
-    # #     corners_lidar = np.concatenate([corners_lidar, corners_lidar_gt],
-    # #                                     axis=0)
-    # #     gt_flag = np.ones((corners_lidar_gt.shape[0] // 8), dtype=np.bool)
-    # #     pred_flag = np.concatenate(
-    # #         [pred_flag, np.logical_not(gt_flag)], axis=0)
-    # #     scores = scores + [0 for _ in range(infos['gt_boxes'].shape[0])]
-    # scores = np.array(scores, dtype=np.float32)
-    # sort_ids = np.argsort(scores)
-
-    # # image view
-    # imgs = []
-    # for view in cams:
-    #     img = cv2.imread(infos['cams'][view]['data_path'])
-    #     # draw instances
-    #     corners_img, valid = lidar2img(corners_lidar, infos['cams'][view])
-    #     valid = np.logical_and(
-    #         valid,
-    #         check_point_in_img(corners_img, img.shape[0], img.shape[1]))
-    #     valid = valid.reshape(-1, 8)
-    #     corners_img = corners_img.reshape(-1, 8, 2).astype(np.int)
-    #     for aid in range(valid.shape[0]):
-    #         for index in draw_boxes_indexes_img_view:
-    #             if valid[aid, index[0]] and valid[aid, index[1]]:
-    #                 cv2.line(
-    #                     img,
-    #                     corners_img[aid, index[0]],
-    #                     corners_img[aid, index[1]],
-    #                     color=color_map[int(pred_flag[aid])],
-    #                     thickness=scale_factor)
-    #     imgs.append(img)
-    
     for ind, cam in enumerate(cams):
         sample_data_token = sample['data'][cam]
 
@@ -554,10 +547,11 @@ def render_sample_data(
                                                                          box_vis_level=box_vis_level, pred_anns=boxes)
             _, boxes_gt, _ = nusc.get_sample_data(sample_data_token, box_vis_level=box_vis_level)
             data = cv2.imread(data_path)
-
+            # if sample_toekn in ('5ea654e6b56a457093b835dbf8c886e4','5abd3d15e63c44a8a8189a6e70a496ef','6ea8ed46a7e04a10abfa6acd5290ea09'):
+            #     cv2.imwrite('save_scene1124/'+sample_toekn+'_'+cam+".png",data)
             # Show boxes.
             if with_anns:
-                for box in boxes_pred:
+                for box in boxes_gt:#boxes_pred:#camera_intrinsic应修改
                     c = get_color(box.name)
                     box.render_cv2(data, view=camera_intrinsic, normalize=True, colors=(c, c, c))
                 result_data.append(data)
@@ -571,13 +565,17 @@ def render_sample_data(
     np.hstack(first_row)
     cam_img = np.vstack((np.hstack(first_row), np.hstack(second_row)))
     # compose seg map
-    seg_map = cv2.resize(lidar_img, (cam_img.shape[0], cam_img.shape[0]), interpolation=cv2.INTER_LINEAR)
+    seg_map = cv2.resize(lidar_img, (int(cam_img.shape[0]/hwratio), cam_img.shape[0]), interpolation=cv2.INTER_LINEAR)
+    seg_map_gt = cv2.resize(lidar_img_gt, (int(cam_img.shape[0]/hwratio), cam_img.shape[0]), interpolation=cv2.INTER_LINEAR)
 
-    result_img = np.hstack((seg_map, cam_img))
+    result_img = np.hstack((seg_map_gt,seg_map, cam_img))
 
 
     if out_path is not None:
         print(f"save_path: {out_path}.jpg")
+        cv2.imwrite(out_path+'_bevgt.jpg',seg_map_gt)
+        cv2.imwrite(out_path+'_bevpr.jpg',seg_map)
+        cv2.imwrite(out_path+'_campr.jpg',cam_img)
         cv2.imwrite(out_path+'.jpg', result_img)
 
 
@@ -585,14 +583,14 @@ if __name__ == '__main__':
     nusc = NuScenes(version='v1.0-trainval', dataroot='data/nuscenes', verbose=True)
     # render_annotation('7603b030b42a4b1caa8c443ccc1a7d52')
     seg_list = set(filter(lambda x: "gt" not in x, os.listdir(pred_seg_path)))
-
-    # bevformer_results = mmcv.load('test/bevdet-r50-4d-depth-cbgs-detseg/Sat_Nov_23_01_53_17_2024/results_nusc.json')
-    bbox_result_file='test/bevdet-r50-4d-depth-cbgs-detseg/Sat_Nov_23_03_28_24_2024/results_nusc.json'
-    # bbox_result_file='/root/data/chuyunfeng/BEVFormer_segmentation_detection/test/bevformer_small_seg_det/Fri_Nov_22_14_46_03_2024/pts_bbox/results_nusc.json'
-    bevformer_results = mmcv.load(bbox_result_file)
-    sample_token_list = list(bevformer_results['results'].keys())[0:100]#[1000:2000]
+    limit=100
+    # bbox_result_file='test/bevdet-r50-4d-depth-cbgs-detseg/Sat_Nov_23_01_53_17_2024/results_nusc.json'
+    bbox_result_file='/root/data/chuyunfeng/BEVFormer_segmentation_detection/test/bevformer_small_seg_det/Fri_Nov_22_14_46_03_2024/pts_bbox/results_nusc.json'
+    # savedir='test/bevdet-r50-4d-depth-cbgs-detseg/former_det'
     savedir=os.path.dirname(bbox_result_file)+'/pts_bbox/plots'
     if not os.path.exists(savedir):
         os.makedirs(savedir)#多级目录
-    for id in range(0, 100):
-        render_sample_data(sample_token_list[id], pred_data=bevformer_results,out_path=f"{savedir}/{sample_token_list[id]}", seg_list=seg_list)
+    bevformer_results = mmcv.load(bbox_result_file)
+    sample_token_list = list(bevformer_results['results'].keys())[0:limit]#[1000:2000]
+    for id in range(0, limit):
+        render_sample_data(sample_token_list[id], pred_data=bevformer_results, out_path=f"{savedir}/{sample_token_list[id]}", seg_list=seg_list)
