@@ -75,7 +75,7 @@ data_config = {
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-batch_size=4
+batch_size=16
 bev_embed_dims=256
 # Model
 grid_config = {
@@ -157,8 +157,8 @@ model = dict(
         grid_config=grid_config,
         map_grid_conf=map_grid_conf,
         in_channels=256,
-        pred_det=False,
-        pred_seg=True,
+        pred_det=True,
+        pred_seg=False,
         pred_vec=False,
         loss_seg=dict(
                 type='CrossEntropyLoss',
@@ -191,7 +191,7 @@ model = dict(
             post_center_range=[-61.2, -15.24, -10.0, 61.2, 61.2, 10.0],
             max_num=500,
             score_threshold=0.1,
-            out_size_factor=1024/bev_w,
+            out_size_factor=[1024/bev_w,1024/bev_h],
             voxel_size=voxel_size[:2],
             code_size=9),
         separate_head=dict(
@@ -214,7 +214,7 @@ model = dict(
             point_cloud_range=point_cloud_range,
             grid_size=[1024, 1024, 40],
             voxel_size=voxel_size,
-            out_size_factor=1024/bev_w,
+            out_size_factor=[1024/bev_w,1024/bev_h],
             dense_reg=1,
             gaussian_overlap=0.1,
             max_objs=500,
@@ -228,7 +228,7 @@ model = dict(
             max_pool_nms=False,
             min_radius=[4, 12, 10, 1, 0.85, 0.175],
             score_threshold=0.1,
-            out_size_factor=1024/bev_w,
+            out_size_factor=[1024/bev_w,1024/bev_h],
             voxel_size=voxel_size[:2],
             pre_max_size=1000,
             post_max_size=500,
@@ -248,12 +248,12 @@ data_root = 'data/nuscenes/'
 file_client_args = dict(backend='disk')
 
 bda_aug_conf = dict(
-    rot_lim=(-0., 0.),
-    scale_lim=(1., 1.),
-    # rot_lim=(-22.5, 22.5),#看起来对分割效果不好
-    # scale_lim=(0.95, 1.05),
-    flip_dx_ratio=0.0,
-    flip_dy_ratio=0.)
+    # rot_lim=(-0., 0.),
+    # scale_lim=(1., 1.),
+    rot_lim=(-22.5, 22.5),#看起来对分割效果不好
+    scale_lim=(0.95, 1.05),
+    flip_dx_ratio=0.5,
+    flip_dy_ratio=0.5)
 
 train_pipeline = [
     dict(
@@ -402,4 +402,4 @@ custom_hooks = [
 ]
 find_unused_parameters=False
 # fp16 = dict(loss_scale='dynamic')
-# resume_from="work_dirs/bevdepth-segonly160-1015/epoch_5.pth"
+# load_from="ckpts/bevdet-r50-4d-depth-cbgs.pth"
