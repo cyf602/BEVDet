@@ -873,13 +873,19 @@ class PrepareImageInputs(object):
         is_train=False,
         sequential=False,
         opencv_pp=False,
+        with_2d=False,#若有2dbox，要同步处理
+        data_aug_conf=None
     ):
         self.is_train = is_train
         self.data_config = data_config
         self.normalize_img = mmlabNormalize
         self.sequential = sequential
         self.opencv_pp = opencv_pp
-
+        self.with_2d=with_2d
+        self.filter_invisible=True#遮挡筛选
+        self.min_size = 2.0#太小的bbox2d不要
+        self.data_aug_conf = data_aug_conf
+        
     def get_rot(self, h):
         return torch.Tensor([
             [np.cos(h), np.sin(h)],
@@ -1065,10 +1071,14 @@ class PrepareImageInputs(object):
         intrins = []
         post_rots = []
         post_trans = []
+        new_gt_bboxes = []
+        new_centers2d = []
+        new_labels2d = []
+        new_depths = []
         cam_names = self.choose_cams()
         results['cam_names'] = cam_names
         canvas = []
-        for cam_name in cam_names:
+        for i,cam_name in enumerate(cam_names):
             cam_data = results['curr']['cams'][cam_name]
             filename = cam_data['data_path']
             img = Image.open(filename)
@@ -1092,6 +1102,29 @@ class PrepareImageInputs(object):
                                    flip=flip,
                                    rotate=rotate)
 
+            if self.with_2d:
+                gt_bboxes = results['bboxes2d_xyxy'][i]
+                centers2d = results['centers2d'][i]
+                labels2d = results['labels2d'][i]
+                depths = results['bboxdepths2d'][i]
+                if len(gt_bboxes) != 0:
+                    gt_bboxes, centers2d, labels2d, depths = self._bboxes_transform(
+                        gt_bboxes, 
+                        centers2d,
+                        labels2d,
+                        depths,
+                        resize=resize,
+                        crop=crop,
+                        flip=flip,
+                    )
+                if len(gt_bboxes) != 0 and self.filter_invisible:
+                    gt_bboxes, centers2d, labels2d, depths =  self._filter_invisible(gt_bboxes, centers2d, labels2d, depths)
+
+                new_gt_bboxes.append(gt_bboxes.reshape(-1,4))
+                new_centers2d.append(centers2d.reshape(-1,2))
+                new_labels2d.append(labels2d)
+                new_depths.append(depths)
+            
             # for convenience, make augmentation matrices 3x3
             post_tran = torch.zeros(3)
             post_rot = torch.eye(3)
@@ -1129,7 +1162,11 @@ class PrepareImageInputs(object):
             ego2globals.append(ego2global)
             post_rots.append(post_rot)
             post_trans.append(post_tran)
-
+        
+        results['bboxes2d_xyxy'] = new_gt_bboxes
+        results['centers2d'] = new_centers2d
+        results['labels2d'] = new_labels2d
+        results['bboxdepths2d'] = new_depths   
         if self.sequential:
             for adj_info in results['adjacent']:
                 post_trans.extend(post_trans[:len(cam_names)])
@@ -1153,6 +1190,69 @@ class PrepareImageInputs(object):
         results['canvas'] = canvas
         return (imgs, sensor2egos, ego2globals, intrins, post_rots, post_trans)
 
+    #copy from QAF2D
+    def _bboxes_transform(self, bboxes, centers2d, gt_labels, depths,resize, crop, flip):
+        assert len(bboxes) == len(centers2d) == len(gt_labels) == len(depths)
+        fH, fW = self.data_aug_conf["input_size"]
+        bboxes = bboxes * resize
+        bboxes[:, 0] = bboxes[:, 0] - crop[0]
+        bboxes[:, 1] = bboxes[:, 1] - crop[1]
+        bboxes[:, 2] = bboxes[:, 2] - crop[0]
+        bboxes[:, 3] = bboxes[:, 3] - crop[1]
+        bboxes[:, 0] = np.clip(bboxes[:, 0], 0, fW)
+        bboxes[:, 2] = np.clip(bboxes[:, 2], 0, fW)
+        bboxes[:, 1] = np.clip(bboxes[:, 1], 0, fH) 
+        bboxes[:, 3] = np.clip(bboxes[:, 3], 0, fH)
+        keep = ((bboxes[:, 2] - bboxes[:, 0]) >= self.min_size) & ((bboxes[:, 3] - bboxes[:, 1]) >= self.min_size)
+
+
+        if flip:
+            x0 = bboxes[:, 0].copy()
+            x1 = bboxes[:, 2].copy()
+            bboxes[:, 2] = fW - x0
+            bboxes[:, 0] = fW - x1
+        bboxes = bboxes[keep]
+
+        centers2d  = centers2d * resize
+        centers2d[:, 0] = centers2d[:, 0] - crop[0]
+        centers2d[:, 1] = centers2d[:, 1] - crop[1]
+        centers2d[:, 0] = np.clip(centers2d[:, 0], 0, fW)
+        centers2d[:, 1] = np.clip(centers2d[:, 1], 0, fH) 
+        if flip:
+            centers2d[:, 0] = fW - centers2d[:, 0]
+
+        centers2d = centers2d[keep]
+        gt_labels = gt_labels[keep]
+        depths = depths[keep]
+
+        return bboxes, centers2d, gt_labels, depths
+
+    def _filter_invisible(self, bboxes, centers2d, gt_labels, depths):
+        # filter invisible 2d bboxes
+        assert len(bboxes) == len(centers2d) == len(gt_labels) == len(depths)
+        fH, fW = self.data_aug_conf["input_size"]
+        indices_maps = np.zeros((fH,fW))
+        tmp_bboxes = np.zeros_like(bboxes)
+        tmp_bboxes[:, :2] = np.ceil(bboxes[:, :2])
+        tmp_bboxes[:, 2:] = np.floor(bboxes[:, 2:])
+        tmp_bboxes = tmp_bboxes.astype(np.int64)
+        sort_idx = np.argsort(-depths, axis=0, kind='stable')
+        tmp_bboxes = tmp_bboxes[sort_idx]
+        bboxes = bboxes[sort_idx]
+        depths = depths[sort_idx]
+        centers2d = centers2d[sort_idx]
+        gt_labels = gt_labels[sort_idx]
+        for i in range(bboxes.shape[0]):
+            u1, v1, u2, v2 = tmp_bboxes[i]
+            indices_maps[v1:v2, u1:u2] = i
+        indices_res = np.unique(indices_maps).astype(np.int64)
+        bboxes = bboxes[indices_res]
+        depths = depths[indices_res]
+        centers2d = centers2d[indices_res]
+        gt_labels = gt_labels[indices_res]
+
+        return bboxes, centers2d, gt_labels, depths
+
     def __call__(self, results):
         results['img_inputs'] = self.get_inputs(results)
         return results
@@ -1172,7 +1272,22 @@ class LoadAnnotations(object):
         results['gt_labels_3d'] = gt_labels
         return results
 
-
+@PIPELINES.register_module()
+class LoadAnnotations2D(object):
+    def __init__(self,cam_names,label2d_root='data/nuscenes/nusc_2d_yolo'):
+        self.label2d_root=label2d_root
+        self.cam_names=cam_names
+    def __call__(self,results):
+        labels2d=[]
+        bboxes2d=[]
+        for cam in self.cam_names:
+            cam_data=results['curr']['cams'][cam]
+            labels2d.append(torch.from_numpy(cam_data['labels2d']).long())
+            bboxes2d.append(torch.from_numpy(cam_data['bboxes2d']).float())
+        results['labels2d']=labels2d
+        results['bboxes2d']=bboxes2d
+        return results
+    
 @PIPELINES.register_module()
 class BEVAug(object):
 
@@ -1361,3 +1476,5 @@ class BEVAugv2(BEVAug):
             # if flip_dy:
             #     results['semantic_indices']=torch.flip(results['semantic_indices'],dims=[0])
         return results
+    
+    

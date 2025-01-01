@@ -381,7 +381,7 @@ class CenterHead(BaseModule):
                 of [B, max_obj, 10].
         """
         dim = feat.size(2)
-        ind = ind.unsqueeze(2).expand(ind.size(0), ind.size(1), dim)
+        ind = ind.unsqueeze(2).expand(ind.size(0), ind.size(1), dim)#[B,500]->[B,500,10]
         feat = feat.gather(1, ind)
         if mask is not None:
             mask = mask.unsqueeze(2).expand_as(feat)
@@ -462,8 +462,10 @@ class CenterHead(BaseModule):
         grid_size = torch.tensor(self.train_cfg['grid_size'])
         pc_range = torch.tensor(self.train_cfg['point_cloud_range'])
         voxel_size = torch.tensor(self.train_cfg['voxel_size'])
-
-        feature_map_size = (grid_size[:2] // self.train_cfg['out_size_factor']).long().tolist()
+        if isinstance(self.train_cfg['out_size_factor'],list):
+            feature_map_size=[int(u/v) for u,v in zip(grid_size[:2],self.train_cfg['out_size_factor'])] 
+        else:
+            feature_map_size = (grid_size[:2] // self.train_cfg['out_size_factor']).long().tolist()
 
         # reorganize the gt_dict by tasks
         task_masks = []
@@ -583,7 +585,7 @@ class CenterHead(BaseModule):
             heatmaps.append(heatmap)
             anno_boxes.append(anno_box)
             masks.append(mask)
-            inds.append(ind)
+            inds.append(ind)#存在目标中心点的栅格序号 shape=500
         return heatmaps, anno_boxes, inds, masks
 
     def loss(self, gt_bboxes_3d, gt_labels_3d, preds_dicts, **kwargs):
@@ -631,8 +633,8 @@ class CenterHead(BaseModule):
             num = masks[task_id].float().sum()
             ind = inds[task_id]
             pred = preds_dict[0]['anno_box'].permute(0, 2, 3, 1).contiguous()
-            pred = pred.view(pred.size(0), -1, pred.size(3))
-            pred = self._gather_feat(pred, ind)
+            pred = pred.view(pred.size(0), -1, pred.size(3))#[B,w*h,10(nc)]
+            pred = self._gather_feat(pred, ind)#[B,500,10] 拿到ind处的特征
             mask = masks[task_id].unsqueeze(2).expand_as(target_box).float()
             num = torch.clamp(
                 reduce_mean(target_box.new_tensor(num)), min=1e-4).item()

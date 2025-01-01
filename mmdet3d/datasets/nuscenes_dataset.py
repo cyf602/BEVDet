@@ -315,6 +315,12 @@ class NuScenesDataset(Custom3DDataset):
                 if '4d' in self.img_info_prototype:
                     info_adj_list = self.get_adj_info(info, index)
                     input_dict.update(dict(adjacent=info_adj_list))
+            input_dict.update(dict(
+                bboxes2d_xyxy=info['bboxes2d_xyxy'],
+                labels2d=info['labels2d'],
+                centers2d=info['centers2d'],
+                bboxdepths2d=info['bboxdepths2d']
+            ))
         return input_dict
 
     def get_adj_info(self, info, index):

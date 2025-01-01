@@ -73,7 +73,7 @@ data_config = {
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-batch_size=4
+batch_size=8
 bev_embed_dims=256
 # Model
 grid_config = {
@@ -92,7 +92,7 @@ voxel_size = [0.1, 0.1, 0.2]
 
 numC_Trans = 80
 
-multi_adj_frame_id_cfg = (1, 1+1, 1)
+multi_adj_frame_id_cfg = (1, 2+1, 1)
 
 model = dict(
     type='BEVDepth4D_Multitask',
@@ -115,7 +115,7 @@ model = dict(
         type='CustomFPN',
         in_channels=[1024, 2048],
         out_channels=512,
-        num_outs=1,
+        num_outs=1,#4 for yolo det CustomFPN当前只输出单一特征图
         start_level=0,
         out_ids=[0]),
     img_view_transformer=dict(
@@ -149,13 +149,23 @@ model = dict(
     #         out_channels=bev_embed_dims,
     #     )
     # ),
+    det2d_cfg=dict(    
+        type='YOLOXHeadCustom',
+        num_classes=10,
+        in_channels=512,
+        strides=[16],#[8, 16, 32, 64],
+        train_cfg=dict(assigner=dict(
+            type='SimOTAAssigner', center_radius=2.5)),
+        test_cfg=dict(score_thr=0.01, nms=dict(
+            type='nms', iou_threshold=0.65)),
+    ),
     pts_bbox_head=dict(
         type='CenterHeadDetSeg',
         grid_config=grid_config,
         map_grid_conf=map_grid_conf,
         in_channels=256,
         pred_det=True,
-        pred_seg=True,
+        pred_seg=False,
         pred_vec=False,
         loss_seg=dict(
                 type='CrossEntropyLoss',
@@ -245,9 +255,9 @@ data_root = 'data/nuscenes/'
 file_client_args = dict(backend='disk')
 
 bda_aug_conf = dict(
-    # rot_lim=(-0., 0.),
+    rot_lim=(-0., 0.),
     # scale_lim=(1., 1.),
-    rot_lim=(-22.5, 22.5),#看起来对分割效果不好
+    # rot_lim=(-22.5, 22.5),#看起来对分割效果不好
     scale_lim=(0.95, 1.05),
     flip_dx_ratio=0.5,
     flip_dy_ratio=0.5)
@@ -257,8 +267,11 @@ train_pipeline = [
         type='PrepareImageInputs',
         is_train=True,
         data_config=data_config,
-        sequential=True),
+        sequential=True,
+        with_2d=True,
+        data_aug_conf=data_config),
     dict(type='LoadAnnotations'),
+    # dict(type='LoadAnnotations2D',cam_names=data_config['cams']),#加载2d-yolo标签
     dict(type='RasterizeMapVectors', map_grid_conf=map_grid_conf),
     dict(
         type='BEVAugv2',
@@ -278,9 +291,11 @@ train_pipeline = [
     dict(type='DefaultFormatBundle3D', class_names=class_names),
     dict(
         type='Collect3D', keys=['img_inputs', 'gt_bboxes_3d', 'gt_labels_3d',
-                                'gt_depth','semantic_indices'],
+                                'gt_depth','semantic_indices','bboxes2d_xyxy','labels2d','centers2d'],
         meta_keys=('token', 'ego2img', 'sample_idx', 'ego2global_translation',
-        'ego2global_rotation', 'img_shape', 'scene_name','e2g_mat'
+        'ego2global_rotation', 'img_shape', 'scene_name','e2g_mat',
+        # 'labels2d','bboxes2d',
+        # 'bboxes2d_xyxy','centers2d','labels2d','bboxdepths2d'
         # 'pts_filename','box_mode_3d','box_type_3d'
         ))
 ]
@@ -400,3 +415,4 @@ custom_hooks = [
 find_unused_parameters=False
 # fp16 = dict(loss_scale='dynamic')
 # resume_from="work_dirs/bevdepth-segonly160-1015/epoch_5.pth"
+# load_from="ckpts/bevdepthmul-ex4b-ep8.pth"

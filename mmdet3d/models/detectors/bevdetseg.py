@@ -17,12 +17,16 @@ from mmdet.models.utils import build_transformer
 from mmcv.cnn.bricks.transformer import build_positional_encoding
 @DETECTORS.register_module()
 class BEVDepth4D_Multitask(BEVDepth4D):
-    def __init__(self,map_grid_conf,grid_conf,streaming_cfg=None,**kwargs):
+    def __init__(self,map_grid_conf,grid_conf,det2d_cfg=None,streaming_cfg=None,**kwargs):
         super(BEVDepth4D_Multitask,self).__init__(**kwargs)
         self.feat_cropper = BevFeatureSlicer(kwargs['img_view_transformer']['grid_config'], map_grid_conf)    
         self.pred_seg=self.pts_bbox_head.pred_seg
         self.pred_det=self.pts_bbox_head.pred_det
         self.pred_vec=self.pts_bbox_head.pred_vec
+        self.det2d=False    
+        if det2d_cfg is not None:
+            self.det2d=True
+            self.det2t_head = builder.build_head(det2d_cfg)
         # if pred_seg:
         #     self.seg_head = builder.build_head(seg_head)
         if streaming_cfg:
@@ -48,7 +52,107 @@ class BEVDepth4D_Multitask(BEVDepth4D):
             plane = torch.stack([x, y, z, ones], dim=-1)
 #https://zhuanlan.zhihu.com/p/688608681 ; https://blog.csdn.net/devil_son1234/article/details/130699031
             self.register_buffer('plane', plane.double())
-            
+        self.img_features={}
+        
+    def image_encoder(self, img, stereo=False):
+        imgs = img
+        B, N, C, imH, imW = imgs.shape
+        imgs = imgs.view(B * N, C, imH, imW)
+        if self.grid_mask is not None:
+            imgs = self.grid_mask(imgs)
+        x = self.img_backbone(imgs)
+        stereo_feat = None
+        if stereo:
+            stereo_feat = x[0]
+            x = x[1:]
+        if self.with_img_neck:
+            x = self.img_neck(x)
+            if type(x) in [list, tuple]:
+                xshape=x[0].shape
+                if x[0].requires_grad:#key_frame
+                    self.img_features['img_feats']=[f.view(B, N, *xshape[1:]) for f in x]
+                x = x[0]
+        _, output_dim, ouput_H, output_W = x.shape
+        x = x.view(B, N, output_dim, ouput_H, output_W)
+        return x, stereo_feat
+
+    # def prepare_bev_feat(self, img, rot, tran, intrin, post_rot, post_tran,
+    #                      bda, mlp_input):
+    #     x, _ = self.image_encoder(img)
+    #     bev_feat, depth = self.img_view_transformer(
+    #         [x, rot, tran, intrin, post_rot, post_tran, bda, mlp_input])
+    #     if self.pre_process:
+    #         bev_feat = self.pre_process_net(bev_feat)[0]
+    #     return bev_feat, depth,x
+
+    # def extract_img_feat(self,#
+    #                      img,
+    #                      img_metas,
+    #                      pred_prev=False,
+    #                      sequential=False,
+    #                      **kwargs):
+    #     if sequential:
+    #         return self.extract_img_feat_sequential(img, kwargs['feat_prev'])
+    #     imgs, sensor2keyegos, ego2globals, intrins, post_rots, post_trans, \
+    #     bda, _ = self.prepare_inputs(img)
+    #     """Extract features of images."""
+    #     bev_feat_list = []
+    #     depth_list = []
+    #     key_frame = True  # back propagation for key frame only
+    #     for img, sensor2keyego, ego2global, intrin, post_rot, post_tran in zip(
+    #             imgs, sensor2keyegos, ego2globals, intrins, post_rots, post_trans):
+    #         if key_frame or self.with_prev:
+    #             if self.align_after_view_transfromation:
+    #                 sensor2keyego, ego2global = sensor2keyegos[0], ego2globals[0]
+    #             mlp_input = self.img_view_transformer.get_mlp_input(
+    #                 sensor2keyegos[0], ego2globals[0], intrin, post_rot, post_tran, bda)
+    #             inputs_curr = (img, sensor2keyego, ego2global, intrin, post_rot,
+    #                            post_tran, bda, mlp_input)
+    #             if key_frame:
+    #                 bev_feat, depth,allfeat = self.prepare_bev_feat(*inputs_curr)
+    #             else:
+    #                 with torch.no_grad():
+    #                     bev_feat, depth = self.prepare_bev_feat(*inputs_curr)
+    #         else:
+    #             bev_feat = torch.zeros_like(bev_feat_list[0])
+    #             depth = None
+    #         bev_feat_list.append(bev_feat)
+    #         depth_list.append(depth)
+    #         key_frame = False
+    #     if pred_prev:
+    #         assert self.align_after_view_transfromation
+    #         assert sensor2keyegos[0].shape[0] == 1
+    #         feat_prev = torch.cat(bev_feat_list[1:], dim=0)
+    #         ego2globals_curr = \
+    #             ego2globals[0].repeat(self.num_frame - 1, 1, 1, 1)
+    #         sensor2keyegos_curr = \
+    #             sensor2keyegos[0].repeat(self.num_frame - 1, 1, 1, 1)
+    #         ego2globals_prev = torch.cat(ego2globals[1:], dim=0)
+    #         sensor2keyegos_prev = torch.cat(sensor2keyegos[1:], dim=0)
+    #         bda_curr = bda.repeat(self.num_frame - 1, 1, 1)
+    #         return feat_prev, [imgs[0],
+    #                            sensor2keyegos_curr, ego2globals_curr,
+    #                            intrins[0],
+    #                            sensor2keyegos_prev, ego2globals_prev,
+    #                            post_rots[0], post_trans[0],
+    #                            bda_curr]
+    #     if self.align_after_view_transfromation:
+    #         for adj_id in range(1, self.num_frame):
+    #             bev_feat_list[adj_id] = \
+    #                 self.shift_feature(bev_feat_list[adj_id],
+    #                                    [sensor2keyegos[0],
+    #                                     sensor2keyegos[adj_id]],
+    #                                    bda)
+    #     bev_feat = torch.cat(bev_feat_list, dim=1)
+    #     x = self.bev_encoder(bev_feat)
+    #     return [x], depth_list[0]
+
+    # def extract_feat(self, points, img, img_metas, **kwargs):
+    #     """Extract features from images and points."""
+    #     img_feats, depth = self.extract_img_feat(img, img_metas, **kwargs)
+    #     pts_feats = None
+    #     return (img_feats, pts_feats, depth)
+        
     def update_bev_feature(self, curr_bev_feats, img_metas):
         '''
         Args:
@@ -148,6 +252,17 @@ class BEVDepth4D_Multitask(BEVDepth4D):
                                             kwargs['semantic_indices'],
                                             gt_bboxes_ignore)
         losses.update(losses_pts)
+        if self.det2d:
+            gt_bboxes=kwargs['bboxes2d_xyxy']
+            gt_labels=kwargs['labels2d']
+            centers2d=kwargs['centers2d']
+            # for meta in img_metas:#xywh
+            #     centers2d.append([view[:,:2] for view in meta['bboxes2d']])
+            outs_2d=self.det2t_head(**self.img_features)
+            loss2d_inputs = [gt_bboxes, gt_labels,
+                                 centers2d, outs_2d,img_metas]
+            losses2d = self.det2t_head.loss(*loss2d_inputs)
+            losses.update(losses2d)            
         # if self.pred_seg:
         #     losses_seg=self.forward_seg_train(img_feats,kwargs['semantic_indices'])
         #     losses.update(losses_seg)

@@ -200,4 +200,4 @@ class CustomFPN(BaseModule):
                         outs.append(self.fpn_convs[i](F.relu(outs[-1])))
                     else:
                         outs.append(self.fpn_convs[i](outs[-1]))
-        return outs[0]
+        return outs

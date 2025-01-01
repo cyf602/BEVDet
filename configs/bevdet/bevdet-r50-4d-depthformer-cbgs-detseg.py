@@ -73,7 +73,7 @@ data_config = {
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-batch_size=4
+batch_size=1
 bev_embed_dims=256
 # Model
 grid_config = {
@@ -96,7 +96,7 @@ bev_h=int((grid_config['y'][1]-grid_config['y'][0])//grid_config['y'][2])
 _dim_ = 256
 _pos_dim_ = _dim_//2
 _ffn_dim_ = _dim_*2
-multi_adj_frame_id_cfg = (1, 1+1, 1)
+multi_adj_frame_id_cfg = (1, 3+1, 1)
 
 model = dict(
     type='BEVDepth4DFormer_Multitask',
@@ -443,7 +443,7 @@ optimizer = dict(
         }),
     weight_decay=0.01)
 
-optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
+optimizer_config = dict(grad_clip=dict(max_norm=5, norm_type=2))
 # learning policy
 lr_config = dict(
     policy='CosineAnnealing',
@@ -477,3 +477,4 @@ custom_hooks = [
 find_unused_parameters=False
 # fp16 = dict(loss_scale='dynamic')
 # resume_from="work_dirs/bevdepth-segonly160-1015/epoch_5.pth"
+# load_from="work_dirs/bevdepthmul-former-lr2-1118/epoch_15.pth"
