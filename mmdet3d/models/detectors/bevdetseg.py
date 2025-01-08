@@ -15,6 +15,9 @@ from nuscenes.utils.geometry_utils import transform_matrix
 from pyquaternion import Quaternion
 from mmdet.models.utils import build_transformer
 from mmcv.cnn.bricks.transformer import build_positional_encoding
+from mmdet3d.utils.vis import vis_img_and_labels
+import numpy as np
+
 @DETECTORS.register_module()
 class BEVDepth4D_Multitask(BEVDepth4D):
     def __init__(self,map_grid_conf,grid_conf,det2d_cfg=None,streaming_cfg=None,**kwargs):
@@ -261,6 +264,7 @@ class BEVDepth4D_Multitask(BEVDepth4D):
             outs_2d=self.det2t_head(**self.img_features)
             loss2d_inputs = [gt_bboxes, gt_labels,
                                  centers2d, outs_2d,img_metas]
+            # vis_img_and_labels(img_inputs[0][0,::3].cpu().numpy().astype(np.uint8),gt_bboxes[0],gt_labels[0])
             losses2d = self.det2t_head.loss(*loss2d_inputs)
             losses.update(losses2d)            
         # if self.pred_seg:

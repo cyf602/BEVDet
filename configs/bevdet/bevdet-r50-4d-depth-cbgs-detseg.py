@@ -68,12 +68,13 @@ data_config = {
 
     # Augmentation
     'resize': (-0.06, 0.11),
-    'rot': (-5.4, 5.4),
+    'rot': (-0., 0.),
+    # 'rot': (-5.4, 5.4),
     'flip': True,
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-batch_size=8
+batch_size=1
 bev_embed_dims=256
 # Model
 grid_config = {
@@ -344,6 +345,7 @@ share_data_config = dict(
     modality=input_modality,
     img_info_prototype='bevdet4d',
     multi_adj_frame_id_cfg=multi_adj_frame_id_cfg,
+    version="v1.0-mini",
 )
 
 test_data_config = dict(

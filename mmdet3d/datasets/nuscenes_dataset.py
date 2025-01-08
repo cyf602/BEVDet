@@ -148,7 +148,8 @@ class NuScenesDataset(Custom3DDataset):
                  ego_cam='CAM_FRONT',
                  grid_conf=None,
                  seq_split_num=-1,
-                 stereo=False):
+                 stereo=False,
+                 version='v1.0-trainval'):
         self.load_interval = load_interval
         self.use_valid_flag = use_valid_flag
         super().__init__(
@@ -187,7 +188,7 @@ class NuScenesDataset(Custom3DDataset):
             canvas_w = int(patch_w / map_xbound[2])
             self.map_patch_size = (patch_h, patch_w)
             self.map_canvas_size = (canvas_h, canvas_w)
-            self.nusc = NuScenes(version='v1.0-trainval', dataroot=self.data_root, verbose=False)
+            self.nusc = NuScenes(version=version, dataroot=self.data_root, verbose=False)
             self.vector_map = VectorizedLocalMap(
                 dataroot=self.map_dataroot,
                 patch_size=self.map_patch_size,

@@ -851,6 +851,8 @@ def mmlabNormalize(img):
     std = np.array([58.395, 57.12, 57.375], dtype=np.float32)
     to_rgb = True
     img = imnormalize(np.array(img), mean, std, to_rgb)
+    # img = np.array(img).copy().astype(np.float32)
+    # cv2.cvtColor(img, cv2.COLOR_BGR2RGB, img)  # inplace
     img = torch.tensor(img).float().permute(2, 0, 1).contiguous()
     return img
 
@@ -883,7 +885,7 @@ class PrepareImageInputs(object):
         self.opencv_pp = opencv_pp
         self.with_2d=with_2d
         self.filter_invisible=True#遮挡筛选
-        self.min_size = 2.0#太小的bbox2d不要
+        self.min_size = 25.0#太小的bbox2d不要
         self.data_aug_conf = data_aug_conf
         
     def get_rot(self, h):
@@ -1231,21 +1233,23 @@ class PrepareImageInputs(object):
         # filter invisible 2d bboxes
         assert len(bboxes) == len(centers2d) == len(gt_labels) == len(depths)
         fH, fW = self.data_aug_conf["input_size"]
-        indices_maps = np.zeros((fH,fW))
+        indices_maps = np.ones((fH,fW))* (len(bboxes)-1)#zeros_like会把最远保留
         tmp_bboxes = np.zeros_like(bboxes)
         tmp_bboxes[:, :2] = np.ceil(bboxes[:, :2])
         tmp_bboxes[:, 2:] = np.floor(bboxes[:, 2:])
         tmp_bboxes = tmp_bboxes.astype(np.int64)
-        sort_idx = np.argsort(-depths, axis=0, kind='stable')
-        tmp_bboxes = tmp_bboxes[sort_idx]
+        sort_idx = np.argsort(-depths, axis=0, kind='stable')#由远至近012...
+        tmp_bboxes = tmp_bboxes[sort_idx]#box按从近到远？
         bboxes = bboxes[sort_idx]
         depths = depths[sort_idx]
         centers2d = centers2d[sort_idx]
         gt_labels = gt_labels[sort_idx]
-        for i in range(bboxes.shape[0]):
+        for i in range(bboxes.shape[0]):#从远到近
             u1, v1, u2, v2 = tmp_bboxes[i]
-            indices_maps[v1:v2, u1:u2] = i
+            indices_maps[v1:v2, u1:u2] = i#靠近的会把远处的覆盖
         indices_res = np.unique(indices_maps).astype(np.int64)
+        indices_area=np.array([np.sum(indices_maps==ind) for ind in indices_res])
+        indices_res=indices_res[indices_area>self.min_size]
         bboxes = bboxes[indices_res]
         depths = depths[indices_res]
         centers2d = centers2d[indices_res]
