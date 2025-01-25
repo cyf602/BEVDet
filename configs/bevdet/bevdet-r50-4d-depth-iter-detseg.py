@@ -343,6 +343,7 @@ test_data_config = dict(
     data_root=data_root,    
     ann_file=data_root + 'bevdetv3-nuscenes_infos_val.pkl',
     grid_conf=map_grid_conf,
+    seq_split_num=-1,
     )
 
 data = dict(
@@ -371,7 +372,7 @@ data = dict(
         test_mode=False,
         use_valid_flag=True,
         grid_conf=map_grid_conf,
-        seq_split_num=-1,
+        seq_split_num=-1,#为正时_set_sequence_group_flag
         # we use box_type_3d='LiDAR' in kitti and nuscenes dataset
         # and box_type_3d='Depth' in sunrgbd and scannet dataset.
         box_type_3d='LiDAR'),
@@ -392,33 +393,33 @@ for key in ['val', 'test']:
 data['train'].update(share_data_config)
 # data['train']['dataset'].update(share_data_config)
 # Optimizer
-# optimizer = dict(type='AdamW', lr=2e-4, weight_decay=1e-2)
-# optimizer_config = dict(grad_clip=dict(max_norm=5, norm_type=2))
-# lr_config = dict(
-#     policy='step',
-#     warmup='linear',
-#     warmup_iters=200,
-#     warmup_ratio=0.001,
-#     step=[int(0.9*total_iters),]
-#     )
+optimizer = dict(type='AdamW', lr=2e-4, weight_decay=1e-2)
+optimizer_config = dict(grad_clip=dict(max_norm=5, norm_type=2))
+lr_config = dict(
+    policy='step',
+    warmup='linear',
+    warmup_iters=200,
+    warmup_ratio=0.001,
+    step=[int(0.9*total_iters),]
+    )
 
 #cfg from bevformer
-optimizer = dict(
-    type='AdamW',
-    lr=4e-4,
-    paramwise_cfg=dict(
-        custom_keys={
-            'img_backbone': dict(lr_mult=0.1),
-        }),
-    weight_decay=0.01)
-optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
-# learning policy
-lr_config = dict(
-    policy='CosineAnnealing',
-    warmup='linear',
-    warmup_iters=500,
-    warmup_ratio=1.0 / 3,
-    min_lr_ratio=1e-3)
+# optimizer = dict(
+#     type='AdamW',
+#     lr=4e-4,
+#     paramwise_cfg=dict(
+#         custom_keys={
+#             'img_backbone': dict(lr_mult=0.1),
+#         }),
+#     weight_decay=0.01)
+# optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
+# # learning policy
+# lr_config = dict(
+#     policy='CosineAnnealing',
+#     warmup='linear',
+#     warmup_iters=500,
+#     warmup_ratio=1.0 / 3,
+#     min_lr_ratio=1e-3)
 
 # runner = dict(type='EpochBasedRunner', max_epochs=20)
 runner = dict(type='IterBasedRunner', max_iters=num_epochs * num_iters_per_epoch)
@@ -439,4 +440,5 @@ custom_hooks = [
 ]
 find_unused_parameters=False
 # fp16 = dict(loss_scale='dynamic')
-resume_from="work_dirs/bevdepthmul-itersegaug1106/iter_7724.pth"
+# resume_from="work_dirs/bevdepthmul-itersegaug1106/iter_7724.pth"
+resume_from="work_dirs/bevdepthmul-iterbase-lrstep-bevaug1107/iter_61792.pth"

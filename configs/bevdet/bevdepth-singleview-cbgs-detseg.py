@@ -75,7 +75,7 @@ data_config = {
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-batch_size=16
+batch_size=8
 bev_embed_dims=256
 # Model
 grid_config = {

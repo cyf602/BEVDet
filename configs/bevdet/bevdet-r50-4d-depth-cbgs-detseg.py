@@ -74,7 +74,7 @@ data_config = {
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-batch_size=1
+batch_size=8
 bev_embed_dims=256
 # Model
 grid_config = {
@@ -345,7 +345,7 @@ share_data_config = dict(
     modality=input_modality,
     img_info_prototype='bevdet4d',
     multi_adj_frame_id_cfg=multi_adj_frame_id_cfg,
-    version="v1.0-mini",
+    version="v1.0-trainval",
 )
 
 test_data_config = dict(
@@ -393,6 +393,14 @@ for key in ['val', 'test']:
 data['train']['dataset'].update(share_data_config)
 # Optimizer
 optimizer = dict(type='AdamW', lr=2e-4, weight_decay=1e-2)
+# optimizer = dict(
+#     type='AdamW',
+#     lr=2e-4,
+#     paramwise_cfg=dict(
+#         custom_keys={
+#             'img_backbone': dict(lr_mult=0.25),
+#         }),
+#     weight_decay=0.01)
 optimizer_config = dict(grad_clip=dict(max_norm=5, norm_type=2))
 lr_config = dict(
     policy='step',
@@ -402,6 +410,9 @@ lr_config = dict(
     step=[20,])
 runner = dict(type='EpochBasedRunner', max_epochs=20)
 evaluation = dict(interval=1, pipeline=test_pipeline)
+# runner = dict(type='IterBasedRunner', max_iters=20*7724)
+# evaluation = dict(interval=7724,pipeline=test_pipeline)
+# checkpoint_config = dict(interval=7724)
 
 custom_hooks = [
     # dict(

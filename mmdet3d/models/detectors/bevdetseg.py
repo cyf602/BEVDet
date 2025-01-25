@@ -15,7 +15,7 @@ from nuscenes.utils.geometry_utils import transform_matrix
 from pyquaternion import Quaternion
 from mmdet.models.utils import build_transformer
 from mmcv.cnn.bricks.transformer import build_positional_encoding
-from mmdet3d.utils.vis import vis_img_and_labels
+# from mmdet3d.utils.vis import vis_img_and_labels
 import numpy as np
 
 @DETECTORS.register_module()

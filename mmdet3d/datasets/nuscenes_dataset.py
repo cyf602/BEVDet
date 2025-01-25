@@ -147,7 +147,7 @@ class NuScenesDataset(Custom3DDataset):
                  multi_adj_frame_id_cfg=None,
                  ego_cam='CAM_FRONT',
                  grid_conf=None,
-                 seq_split_num=-1,
+                 seq_split_num=-1,#只有stream加载时需要
                  stereo=False,
                  version='v1.0-trainval'):
         self.load_interval = load_interval
