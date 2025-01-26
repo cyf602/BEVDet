@@ -20,7 +20,9 @@ from .segmentors import *  # noqa: F401,F403
 from .voxel_encoders import *  # noqa: F401,F403
 from .occ_loss_utils import *
 from .modules import *
-
+from .VAE import *
+from .transformer.PlanUtransformer import PlanUAutoRegTransformer
+from .transformer.salt import Spatial_Temp_Transformer
 __all__ = [
     'BACKBONES', 'NECKS', 'ROI_EXTRACTORS', 'SHARED_HEADS', 'HEADS', 'LOSSES',
     'DETECTORS', 'SEGMENTORS', 'VOXEL_ENCODERS', 'MIDDLE_ENCODERS',
@@ -30,4 +32,5 @@ __all__ = [
     'build_voxel_encoder','CustomFocalLoss',
     'SpatialCrossAttention','MSDeformableAttention3D','TemporalSelfAttention',
     'BEVFormerEncoder','BEVFormerLayer','PerceptionTransformer',
+    'Encoder2D','PoseEncoder','VAERes2D','PlanUAutoRegTransformer','Spatial_Temp_Transformer'
 ]

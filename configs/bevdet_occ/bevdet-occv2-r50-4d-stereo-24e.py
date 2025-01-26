@@ -66,7 +66,7 @@ grid_config = {
 
 numC_Trans = 32
 
-multi_adj_frame_id_cfg = (1, 1+1, 1)
+multi_adj_frame_id_cfg = (1, 2+1, 1)
 
 model = dict(
     type='BEVStereo4DOCC',
@@ -75,13 +75,14 @@ model = dict(
     num_extraconv2d=0,#conv2d nums in head
     pred_flow=True,
     pred_occ=True,
+    pc_range=[grid_config['x'][0],grid_config['y'][0],grid_config['z'][0],grid_config['x'][1],grid_config['y'][1],grid_config['z'][1]],
     img_backbone=dict(
-        pretrained='torchvision://resnet50',
-        # pretrained='ckpts/resnet101-5d3b4d8f.pth',
+        # pretrained='torchvision://resnet50',
+        pretrained='ckpts/resnet101-5d3b4d8f.pth',
         type='ResNet',
-        depth=50,
+        depth=101,
         num_stages=4,
-        out_indices=(0,2,3),
+        out_indices=(0,1,2,3),
         frozen_stages=-1,
         norm_cfg=dict(type='BN', requires_grad=True),
         norm_eval=False,
@@ -89,7 +90,7 @@ model = dict(
         style='pytorch'),
     img_neck=dict(
         type='CustomFPN',
-        in_channels=[1024,2048],
+        in_channels=[512,1024,2048],
         out_channels=256,
         num_outs=1,
         start_level=0,
@@ -146,8 +147,8 @@ model = dict(
                           aspp_mid_channels=96,
                           stereo=True,
                           bias=5.),
-        downsample=16,
-        cv_downsample=4),
+        downsample=8,
+        cv_downsample=2),
     img_bev_encoder_backbone=dict(
         type='CustomResNet3D',
         numC_input=numC_Trans * (len(range(*multi_adj_frame_id_cfg))+1),
@@ -170,16 +171,16 @@ model = dict(
         num_channels=[numC_Trans,],
         stride=[1,],
         backbone_output_ids=[0,]),
-    # loss_occ=dict(
-    #     type='CrossEntropyLoss',
-    #     use_sigmoid=False,
-    #     loss_weight=1.0),
     loss_occ=dict(
-            type='FocalLoss',
-            use_sigmoid=True,
-            gamma=2.0,
-            alpha=0.25,
-            loss_weight=10.0),
+        type='CrossEntropyLoss',
+        use_sigmoid=False,
+        loss_weight=1.0),
+    # loss_occ=dict(
+    #         type='FocalLoss',
+    #         use_sigmoid=True,
+    #         gamma=2.0,
+    #         alpha=0.25,
+    #         loss_weight=10.0),
     loss_flow=dict(type='L1Loss', loss_weight=0.25),
     use_mask=True,
 )
@@ -193,8 +194,8 @@ file_client_args = dict(backend='disk')
 bda_aug_conf = dict(
     rot_lim=(-0., 0.),
     scale_lim=(1., 1.),
-    flip_dx_ratio=0,
-    flip_dy_ratio=0)
+    flip_dx_ratio=0.5,
+    flip_dy_ratio=0.5)
 
 train_pipeline = [
     dict(
@@ -219,7 +220,8 @@ train_pipeline = [
     dict(type='DefaultFormatBundle3D', class_names=class_names),
     dict(
         type='Collect3D', keys=['img_inputs', 'gt_depth', 'voxel_semantics',
-                                'voxel_flow','vismask'])
+                                'voxel_flow','vismask','dstamp','dstamp2past','ego2next_mat',
+                                'past_voxel_semantics','ego2past_mat'])
 ]
 
 test_pipeline = [
@@ -271,7 +273,7 @@ test_data_config = dict(
     ann_file=data_root + 'bevdetv3-nuscenes_infos_val.pkl')
 
 data = dict(
-    samples_per_gpu=1,
+    samples_per_gpu=4,
     workers_per_gpu=4,
     train=dict(
         data_root=data_root,
@@ -313,6 +315,6 @@ runner = dict(type='EpochBasedRunner', max_epochs=30)
 #         priority='NORMAL',
 #     ),
 # ]
-# resume_from="work_dirs/bevdetoccv2-occflow1006-movetypeonly/epoch_29.pth"
+resume_from="work_dirs/bevstereo-occflow-r101-t2-1226/epoch_12.pth"
 # load_from="ckpts/bevdet-r50-4d-stereo-cbgs.pth"
 # fp16 = dict(loss_scale='dynamic')

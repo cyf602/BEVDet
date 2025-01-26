@@ -78,7 +78,7 @@ model = dict(
     align_after_view_transfromation=False,
     num_adj=len(range(*multi_adj_frame_id_cfg)),
     num_extraconv2d=0,#conv2d nums in head
-    pred_flow=False,
+    pred_flow=True,
     pred_occ=True,
     pc_range=[grid_config['x'][0],grid_config['y'][0],grid_config['z'][0],grid_config['x'][1],grid_config['y'][1],grid_config['z'][1]],
     img_backbone=dict(
@@ -108,6 +108,7 @@ model = dict(
         out_channels=numC_Trans,
         collapse_z=False,
         depthnet_cfg=dict(use_dcn=False, aspp_mid_channels=96),
+        loss_depth_weight=0.25,
         downsample=8),
     # img_bev_encoder_backbone=dict(
     #     type='CustomResNet3D',
@@ -143,10 +144,10 @@ model = dict(
         type='CrossEntropyLoss',
         use_sigmoid=False,
         loss_weight=1.0),#class_weight=[0.3, 2.0, 2.0, 2.0]
-    future_flow_loss=dict(
-        type='CrossEntropyLoss',
-        use_sigmoid=False,
-        loss_weight=1.0),
+    # future_flow_loss=dict(
+    #     type='CrossEntropyLoss',
+    #     use_sigmoid=False,
+    #     loss_weight=1.0),
     # loss_occ=dict(
     #         type='FocalLoss',
     #         use_sigmoid=True,
@@ -193,7 +194,7 @@ train_pipeline = [
     dict(
         type='Collect3D', keys=['img_inputs', 'gt_depth', 'voxel_semantics','next_voxel_semantics',
                                 'voxel_flow','vismask','dstamp','dstamp2past','ego2next_mat',
-                                'past_voxel_semantics','ego2past_mat'])
+                                'past_voxel_semantics','ego2past_mat','next_vismask'])
 ]
 
 test_pipeline = [
@@ -244,7 +245,7 @@ test_data_config = dict(
     ann_file=data_root + 'bevdetv3-nuscenes_infos_val.pkl')
 
 data = dict(
-    samples_per_gpu=2,
+    samples_per_gpu=4,
     workers_per_gpu=4,
     # train=dict(
     #     type='CBGSDataset',
@@ -281,7 +282,12 @@ data['train'].update(share_data_config)
 #     dist_cfg=dict(backend='nccl',timeout=10800),
 # )
 # Optimizer
-optimizer = dict(type='AdamW', lr=1e-4, weight_decay=1e-2)
+optimizer = dict(type='AdamW', lr=1e-4, 
+    # paramwise_cfg=dict(
+    #     custom_keys={
+    #         'predictor': dict(lr_mult=0.),
+    #     }),
+    weight_decay=1e-2)
 optimizer_config = dict(grad_clip=dict(max_norm=5, norm_type=2))
 lr_config = dict(
     policy='step',
@@ -301,7 +307,9 @@ runner = dict(type='EpochBasedRunner', max_epochs=30)
 #         priority='NORMAL',
 #     ),
 # ]
-# resume_from="work_dirs/bevdepth-newmaskt2_50free_1029/epoch_21.pth"
+# resume_from="work_dirs/bevdepth-selfsupervise1129/epoch_9.pth"
 # resume_from="work_dirs/bevdepth-augflip-11112mask-1117/epoch_15.pth"
-# resume_from="work_dirs/bevdepth-newmaskt2_1024/epoch_10.pth"
+# resume_from="work_dirs/bevdepth-selfsupervise1128/epoch_9.pth"
 # fp16 = dict(loss_scale='dynamic')
+# resume_from="work_dirs/bevdepth-selfsupervise-render1217/epoch_12.pth"
+# load_from="work_dirs/bevdepth-occonly-1121/epoch_30.pth"

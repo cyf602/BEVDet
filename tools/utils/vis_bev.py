@@ -173,8 +173,34 @@ def vis_mask3d(occ_gt,mask,save_idx=0,pred_occ=None,
     # outsave=f'{save_idx}_flowpr_nonfree.txt'
     # results = np.hstack((indices[nonfree], pred_flow.cpu().numpy()[nonfree][:, np.newaxis]))
     # np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
-    
-def vis_fut_loss(occpr,occpr_next,occgt_next,final_mask_past=None,save_root='vis/vis3d/fut'):
+
+def vis_flow3d(flow_gt,flow_pr,occ_gt,occ_pr=None,mask=None,save_idx=0,pred_occ=None,save_root='vis/vis3d'):
+    """
+    """
+    if len(flow_gt.shape)==4:
+        flow_gt=torch.norm(flow_gt,dim=-1)
+    if len(flow_pr.shape)==4:
+        flow_pr=torch.norm(flow_pr,dim=-1)
+    if not os.path.exists(save_root):
+        os.mkdir(save_root)
+    gtnonfree=(occ_gt!=16).cpu().numpy()
+    X,Y,Z=200,200,16
+    voxel_size=0.4
+    indices = np.indices((X, Y, Z))#[3,x,y,z]
+    indices=np.transpose(indices,(1,2,3,0))
+    indices=indices*voxel_size
+    if mask is not None:
+        gtnonfree*=mask
+    outsave=f'{save_idx}_flowgt.txt'
+    results = np.hstack((indices[gtnonfree], flow_gt.cpu().numpy()[gtnonfree][:, np.newaxis]))
+    np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
+    outsave=f'{save_idx}_flowpr.txt'
+    results = np.hstack((indices[gtnonfree], flow_pr.cpu().numpy()[gtnonfree][:, np.newaxis]))
+    np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
+    print(f"vis flow for {save_idx}")
+                
+def vis_fut_loss(occpr,occpr_next,occgt_next,occgt_past=None,final_mask_next=None,save_root='vis/vis3d/fut',
+                 occpr_next_sta=None,occpr_next_mov=None):
     global general_idx
     if not os.path.exists(save_root):
         os.mkdir(save_root)
@@ -195,11 +221,34 @@ def vis_fut_loss(occpr,occpr_next,occgt_next,final_mask_past=None,save_root='vis
     outsave=f'{general_idx}_semgt_next_nonfree.txt'
     results = np.hstack((indices[gtnextnonfree], occgt_next.cpu().numpy()[gtnextnonfree][:, np.newaxis]))
     np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
+    # if occgt_past is not None:
+    #     gtpastnonfree=(occgt_past!=16).cpu().numpy()
+    #     outsave=f'{general_idx}_semgt_past_nonfree.txt'
+    #     results = np.hstack((indices[gtpastnonfree], occgt_past.cpu().numpy()[gtpastnonfree][:, np.newaxis]))
+    #     np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
     print("save_vis_fut_loss ",general_idx)
-    if final_mask_past is not None:
-        final_mask_past=final_mask_past.cpu().numpy()
+    if final_mask_next is not None:
+        final_mask_next=final_mask_next.cpu().numpy()
         outsave=f'{general_idx}_sempr_next_nonfree_mask.txt'
-        results = np.hstack((indices[prnextnonfree*final_mask_past], occpr_next.cpu().numpy()[prnextnonfree*final_mask_past][:, np.newaxis]))
+        results = np.hstack((indices[prnextnonfree*final_mask_next], occpr_next.cpu().numpy()[prnextnonfree*final_mask_next][:, np.newaxis]))
+        np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
+        outsave=f'{general_idx}_sempr_next_mask.txt'
+        results = np.hstack((indices[final_mask_next], occpr_next.cpu().numpy()[final_mask_next][:, np.newaxis]))
+        np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
+    if occpr_next_sta is not None:
+        sta,sta_mask=occpr_next_sta
+        sta_mask=sta_mask.cpu().numpy()
+        prstanextnonfree=(sta!=16).cpu().numpy()
+        outsave=f'{general_idx}_semprsta_next_nonfree.txt'
+        # prstanextnonfree*=sta_mask
+        results = np.hstack((indices[prstanextnonfree*sta_mask], sta.cpu().numpy()[prstanextnonfree*sta_mask][:, np.newaxis]))
+        np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
+    if occpr_next_mov is not None:
+        mov,mov_mask=occpr_next_mov
+        prmovnextnonfree=(mov!=16).cpu().numpy()
+        # prmovnextnonfree=mov_mask.cpu().numpy()
+        outsave=f'{general_idx}_semprmov_next_nonfree.txt'
+        results = np.hstack((indices[prmovnextnonfree*mov_mask.cpu().numpy()], mov.cpu().numpy()[prmovnextnonfree*mov_mask.cpu().numpy()][:, np.newaxis]))
         np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
     general_idx+=1
     

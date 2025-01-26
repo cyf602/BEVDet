@@ -22,6 +22,7 @@ from .ssd3dnet import SSD3DNet
 from .votenet import VoteNet
 from .voxelnet import VoxelNet
 from .bevdet_occfut import BEVStereo4DOCCFut
+from .flowworld import Flowworld
 
 __all__ = [
     'Base3DDetector', 'VoxelNet', 'DynamicVoxelNet', 'MVXTwoStageDetector',
@@ -29,5 +30,6 @@ __all__ = [
     'CenterPoint', 'SSD3DNet', 'ImVoteNet', 'SingleStageMono3DDetector',
     'FCOSMono3D', 'ImVoxelNet', 'GroupFree3DNet', 'PointRCNN', 'SMOKEMono3D',
     'MinkSingleStage3DDetector', 'SASSD', 'BEVDet', 'BEVDet4D', 'BEVDepth4D',
-    'BEVDetTRT', 'BEVStereo4D', 'BEVStereo4DOCC','BEVDepth4DOCC','BEVDepthformerOCC'
+    'BEVDetTRT', 'BEVStereo4D', 'BEVStereo4DOCC','BEVDepth4DOCC','BEVDepthformerOCC',
+    'Flowworld'
 ]

@@ -146,7 +146,7 @@ class NuScenesDatasetOccpancyv2(NuScenesDatasetOccpancy):#for openoccv2
         input_dict['occv2_gt_path'] = self.data_infos[index]['occv2_path']
         input_dict['dstamp']=self.data_infos[index]['dstamp']
         input_dict['dstamp2past']=self.data_infos[index]['dstamp2past']
-        if input_dict['dstamp']<1:
+        if input_dict['dstamp']<1:#ego2global:车相对global的坐标 transform_matrix不inverse输出矩阵ego2global_mat，global下坐标->ego的变换矩阵，这里'to'是相对于 其实和'to'坐标转换矩阵含义相反
             input_dict['next_occv2_path']=self.data_infos[index+1]['occv2_path']
             next_global2ego_mat=transform_matrix(translation=self.data_infos[index+1]['ego2global_translation'], rotation=Quaternion(self.data_infos[index+1]['ego2global_rotation']),inverse=True)
             ego2global_mat=transform_matrix(translation=self.data_infos[index]['ego2global_translation'],rotation=Quaternion(self.data_infos[index]['ego2global_rotation']))

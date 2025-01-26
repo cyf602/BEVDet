@@ -13,7 +13,8 @@ from mmdet3d.core.points import BasePoints, get_points_type
 from mmdet.datasets.pipelines import LoadAnnotations, LoadImageFromFile
 from ...core.bbox import LiDARInstance3DBoxes
 from ..builder import PIPELINES
-
+from nuscenes.eval.common.utils import quaternion_yaw
+# from nuscenes.eval.common.utils import Quaternion as nu_Quaternion
 
 @PIPELINES.register_module()
 class LoadOccGTFromFile(object):
@@ -81,11 +82,15 @@ class LoadOccGTFromFilev2(LoadTempOccGTFromFile):
         results['vismask']=occ_labels['vismask']
         next_occgt_path=results.get('next_occv2_path',None)
         past_occgt_path=results.get('past_occv2_path',None)
+        if 'a181bde135194ef2a5d8c3a346984451' in occ_gt_path or np.sum(results['vismask'])<1000:
+            print("too few pts visible:",occ_gt_path,np.sum(results['vismask']))
         if next_occgt_path:
             occ_next_gt_path = os.path.join(next_occgt_path, "labels.npz")
             results['next_voxel_semantics']=np.load(occ_next_gt_path)['semantics']
+            results['next_vismask']=np.load(occ_next_gt_path)['vismask']
         else:
-            results['next_voxel_semantics']=16*np.ones_like(occ_labels['semantics'])
+            results['next_vismask']=np.zeros_like(occ_labels['vismask']).astype(bool)
+            results['next_voxel_semantics']=16*np.ones_like(occ_labels['vismask'])
         if past_occgt_path:
             occ_past_gt_path = os.path.join(past_occgt_path, "labels.npz")
             results['past_voxel_semantics']=np.load(occ_past_gt_path)['semantics']
@@ -93,6 +98,59 @@ class LoadOccGTFromFilev2(LoadTempOccGTFromFile):
             results['past_voxel_semantics']=16*np.ones_like(occ_labels['semantics'])
         return results     
     
+@PIPELINES.register_module()
+class LoadOccGTFromFilev3(object):
+    """load many frames"""
+    def __call__(self, results):
+        occ_gt_path=os.path.join(results['occv2_gt_path'], "labels.npz")
+        occ_labels=np.load(occ_gt_path)
+        occ_inputs=[occ_labels['semantics']]
+        timestamps=[results['timestamp']]
+        dstamps=[results['dstamp']]
+        cur_loc=np.array(results['e2g_translation'])
+        rel_locs=[np.array([0,0,0]).astype(np.float64)]
+        # cur_rot=
+        for adj_info in results['adjacent']:
+            occ_gt_path=os.path.join(adj_info['occv2_path'], "labels.npz")
+            occ_inputs.append(np.load(occ_gt_path)['semantics'])
+            timestamps.append(adj_info['timestamp']/1e6)
+            dstamps.append(adj_info['dstamp'])
+        dstamps=dstamps[::-1]
+        occ_inputs=occ_inputs[::-1]#变为从前到后    
+        occ_inputs=np.stack(occ_inputs)#t,w,h,16
+        results['occ_inputs']=occ_inputs
+        results['dstamps']=dstamps
+        next_occgt_path=results.get('next_occv2_path',None)
+        if next_occgt_path:#相当于GT
+            occ_next_gt_path = os.path.join(next_occgt_path, "labels.npz")
+            results['next_voxel_semantics']=np.load(occ_next_gt_path)['semantics']
+            results['next_vismask']=np.load(occ_next_gt_path)['vismask']
+        else:
+            results['next_vismask']=np.zeros_like(occ_labels['vismask']).astype(bool)
+            results['next_voxel_semantics']=16*np.ones_like(occ_labels['vismask'])
+        return results
+
+@PIPELINES.register_module()
+class FormatPoses(object):
+    
+    """load many frames pose,yaw"""
+    def __call__(self, results):
+        cur_loc=np.array(results['e2g_translation'])
+        rotation = Quaternion(results['e2g_rotation'])
+        cur_yaw=quaternion_yaw(rotation)#rad
+        rel_locs=[np.array([0,0,0])]
+        rel_yaws=[0.]
+        Quaternions=[np.array(results['e2g_rotation'])]
+        for adj_info in results['adjacent']:
+            rel_locs.append(np.array(adj_info['ego2global_translation'])-cur_loc)
+            rotation = Quaternion(adj_info['ego2global_rotation'])
+            rel_yaws.append(quaternion_yaw(rotation)-cur_yaw)
+            Quaternions.append(np.array(results['e2g_rotation']))
+        results['rel_locs']=np.stack(rel_locs[::-1]).astype(np.float32)
+        results['rel_yaws']=np.array(rel_yaws[::-1]).astype(np.float32)
+        results['Quaternions']=np.stack(Quaternions[::-1]).astype(np.float32)
+        return results
+            
 @PIPELINES.register_module()
 class LoadMultiViewImageFromFiles(object):
     """Load multi channel images from a list of separate channel files.
@@ -1469,8 +1527,8 @@ class BEVAugv2(BEVAug):
                 results['vismask']=results['vismask'][::-1,...].copy()
                 if 'next_voxel_semantics' in results:
                     results['next_voxel_semantics']=results['next_voxel_semantics'][::-1,...].copy()
-                if 'past_voxel_semamtics' in results:
-                    results['past_voxel_semamtics']=results['past_voxel_semamtics'][::-1,...].copy()
+                if 'past_voxel_semantics' in results:
+                    results['past_voxel_semantics']=results['past_voxel_semantics'][::-1,...].copy()
             if flip_dy:
                 results['voxel_semantics'] = results['voxel_semantics'][:,::-1,...].copy()
                 results['voxel_flow'] = results['voxel_flow'][:,::-1,...].copy()
@@ -1478,6 +1536,6 @@ class BEVAugv2(BEVAug):
                 results['vismask']=results['vismask'][:,::-1,...].copy()
                 if 'next_voxel_semantics' in results:
                     results['next_voxel_semantics']=results['next_voxel_semantics'][:,::-1,...].copy()
-                if 'past_voxel_semamtics' in results:
-                    results['past_voxel_semamtics']=results['past_voxel_semamtics'][:,::-1,...].copy()
+                if 'past_voxel_semantics' in results:
+                    results['past_voxel_semantics']=results['past_voxel_semantics'][:,::-1,...].copy()
         return results

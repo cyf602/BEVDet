@@ -294,7 +294,7 @@ if __name__=="__main__":
         # pcd_gt = process_one_sample(sem_gt, lidar_rays, lidar_origins, flow_gt)#[8*N,4]
 
         # gt_dict=generate_coords(sem_gt, lidar_rays, lidar_origins,flow_gt)
-    ann_file='data/nuscenes/bevdetv3-nuscenes_infos_train.pkl'
+    ann_file='data/nuscenes/bevdetv3-nuscenes_infos_val.pkl'
     print("processing:",ann_file)
     data = mmcv.load(ann_file)
     data_infos = data['infos']
@@ -339,9 +339,9 @@ if __name__=="__main__":
         # data_id = sample_tokens.index(token)
         # info = data_infos[data_id]
         info =data_infos[i]
-        if os.path.exists(info['occv2_path'].replace('openocc_v2','openocc_v2_nextrend1112')):
-            print(i,"finisned")
-            continue
+        # if os.path.exists(info['occv2_path'].replace('openocc_v2','openocc_v2_nextrend1112')):
+        #     print(i,"finisned")
+        #     continue
         # else:
         #     print(i,"unfinished")
         #     continue
@@ -350,6 +350,9 @@ if __name__=="__main__":
         occ_gt = dict(np.load(info['occv2_path']+'/labels.npz', allow_pickle=True))
         gt_semantics = occ_gt['semantics']
         instances=occ_gt['instances']
+        if np.sum(occ_gt['vismask'])<1000:
+            print(info['occv2_path'],np.sum(occ_gt['vismask']))
+        continue
         occ_pred = copy.deepcopy(gt_semantics)
         occ_pred[gt_semantics < free_id] = 1
         occ_pred[gt_semantics == free_id] = 0
@@ -383,7 +386,7 @@ if __name__=="__main__":
         
         #save
         occ_gt['vismask']=vismask
-        save_path=info['occv2_path'].replace('openocc_v2','openocc_v2_nextrend1112')
+        # save_path=info['occv2_path'].replace('openocc_v2','openocc_v2_nextrend1112')
         if save_path[-4:]!=".npz":
             save_path=save_path+"/labels.npz"
         if not os.path.exists(os.path.dirname(save_path)):

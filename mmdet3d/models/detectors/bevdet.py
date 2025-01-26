@@ -51,7 +51,7 @@ class BEVDet(CenterPoint):
         x = self.img_backbone(imgs)
         stereo_feat = None
         if stereo:
-            stereo_feat = x[0]
+            stereo_feat = x[0]#最高分辨率特征
             x = x[1:]
         if self.with_img_neck:
             x = self.img_neck(x)
@@ -641,7 +641,7 @@ class BEVStereo4D(BEVDepth4D):
                      post_rots=post_rot,
                      post_trans=post_tran,
                      frustum=self.img_view_transformer.cv_frustum.to(x),#[88,64,176,3]
-                     cv_downsample=4,#self.cv_downsample,
+                     cv_downsample=self.img_view_transformer.cv_downsample,
                      downsample=self.img_view_transformer.downsample,
                      grid_config=self.img_view_transformer.grid_config,
                      cv_feat_list=[feat_prev_iv, stereo_feat])

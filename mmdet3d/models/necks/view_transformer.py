@@ -318,8 +318,8 @@ class LSSViewTransformer(BaseModule):
                 tran_feat.view(B, N, self.out_channels, H, W))
         return bev_feat, depth
 
-    def view_transform(self, input, depth, tran_feat):
-        for shape_id in range(3):
+    def view_transform(self, input, depth, tran_feat):#tran_feat[bn,32C,32h,88w]
+        for shape_id in range(3):#frustum.shape det:118,16,44,3
             assert depth.shape[shape_id+1] == self.frustum.shape[shape_id]
         if self.accelerate:
             self.pre_compute(input)
@@ -590,14 +590,14 @@ class DepthNet(nn.Module):
             .matmul(points.unsqueeze(-1))
         points = torch.cat(
             (points[..., :2, :] * points[..., 2:3, :], points[..., 2:3, :]), 5)
-
+        #points 视锥点投影到像素坐标系 curr2adjsensor
         rots = metas['k2s_sensor'][:, :, :3, :3].contiguous()
         trans = metas['k2s_sensor'][:, :, :3, 3].contiguous()
         combine = rots.matmul(torch.inverse(metas['intrins']))
 
         points = combine.view(B, N, 1, 1, 1, 3, 3).matmul(points)
         points += trans.view(B, N, 1, 1, 1, 3, 1)
-        neg_mask = points[..., 2, 0] < 1e-3
+        neg_mask = points[..., 2, 0] < 1e-3#图像坐标系下z过小 在特征图‘背面’？舍去
         points = metas['intrins'].view(B, N, 1, 1, 1, 3, 3).matmul(points)
         points = points[..., :2, :] / points[..., 2:3, :]
 
@@ -610,7 +610,7 @@ class DepthNet(nn.Module):
         px[neg_mask] = -2
         py[neg_mask] = -2
         grid = torch.stack([px, py], dim=-1)
-        grid = grid.view(B * N, D * H, W, 2)
+        grid = grid.view(B * N, D * H, W, 2)#视锥点对应像素
         return grid
 
     def calculate_cost_volumn(self, metas):
@@ -623,17 +623,17 @@ class DepthNet(nn.Module):
         grid = self.gen_grid(metas, B, N, D, H, W, hi, wi).to(curr.dtype)#[N,D*H,W176,2]
 
         prev = prev.view(B * N, -1, H, W)
-        curr = curr.view(B * N, -1, H, W)
+        curr = curr.view(B * N, -1, H, W)#[6,256,64,176]
         cost_volumn = 0
         # process in group wise to save memory
         for fid in range(curr.shape[1] // group_size):
             prev_curr = prev[:, fid * group_size:(fid + 1) * group_size, ...]
-            wrap_prev = F.grid_sample(prev_curr, grid,
+            wrap_prev = F.grid_sample(prev_curr, grid,#视锥点在prev采样到的特征
                                       align_corners=True,
                                       padding_mode='zeros')
             curr_tmp = curr[:, fid * group_size:(fid + 1) * group_size, ...]
             cost_volumn_tmp = curr_tmp.unsqueeze(2) - \
-                              wrap_prev.view(B * N, -1, D, H, W)
+                              wrap_prev.view(B * N, -1, D, H, W)#stereo特征图作差？
             cost_volumn_tmp = cost_volumn_tmp.abs().sum(dim=1)
             cost_volumn += cost_volumn_tmp#N,D,64,176
         if not self.bias == 0:
@@ -781,16 +781,16 @@ class LSSViewTransformerBEVDepth(LSSViewTransformer):
         Output:
             gt_depths: [B*N*h*w, d]
         """
-        B, N, H, W = gt_depths.shape
+        B, N, H, W = gt_depths.shape#[B,N6,256,704]
         gt_depths = gt_depths.view(B * N, H // self.downsample,
                                    self.downsample, W // self.downsample,
                                    self.downsample, 1)
         gt_depths = gt_depths.permute(0, 1, 3, 5, 2, 4).contiguous()
-        gt_depths = gt_depths.view(-1, self.downsample * self.downsample)
+        gt_depths = gt_depths.view(-1, self.downsample * self.downsample)#(bn)hw 16
         gt_depths_tmp = torch.where(gt_depths == 0.0,
                                     1e5 * torch.ones_like(gt_depths),
-                                    gt_depths)
-        gt_depths = torch.min(gt_depths_tmp, dim=-1).values
+                                    gt_depths)#为0替换为1e5，没打到？
+        gt_depths = torch.min(gt_depths_tmp, dim=-1).values#降采样最近像素
         gt_depths = gt_depths.view(B * N, H // self.downsample,
                                    W // self.downsample)
 
@@ -810,12 +810,12 @@ class LSSViewTransformerBEVDepth(LSSViewTransformer):
         gt_depths = F.one_hot(
             gt_depths.long(), num_classes=self.D + 1).view(-1, self.D + 1)[:,
                                                                            1:]
-        return gt_depths.float()
+        return gt_depths.float()#[12*32*88,88]
 
     @force_fp32()
     def get_depth_loss(self, depth_labels, depth_preds):
         depth_labels = self.get_downsampled_gt_depth(depth_labels)
-        depth_preds = depth_preds.permute(0, 2, 3,
+        depth_preds = depth_preds.permute(0, 2, 3,#bn,D88,32,W88->bnHWD->33792,88
                                           1).contiguous().view(-1, self.D)
         fg_mask = torch.max(depth_labels, dim=1).values > 0.0
         depth_labels = depth_labels[fg_mask]
@@ -834,10 +834,10 @@ class LSSViewTransformerBEVDepth(LSSViewTransformer):
 
         B, N, C, H, W = x.shape
         x = x.view(B * N, C, H, W)
-        x = self.depth_net(x, mlp_input, stereo_metas)
+        x = self.depth_net(x, mlp_input, stereo_metas)#12 120 32 88?
         depth_digit = x[:, :self.D, ...]
         tran_feat = x[:, self.D:self.D + self.out_channels, ...]
-        depth = depth_digit.softmax(dim=1)
+        depth = depth_digit.softmax(dim=1)#det:6,118,16,44
         bev_feat, depth = self.view_transform(input, depth, tran_feat)
         return bev_feat, depth
 
@@ -847,6 +847,7 @@ class LSSViewTransformerBEVStereo(LSSViewTransformerBEVDepth):
 
     def __init__(self,  cv_downsample=4,**kwargs):
         super(LSSViewTransformerBEVStereo, self).__init__(**kwargs)
+        self.cv_downsample=cv_downsample
         self.cv_frustum = self.create_frustum(kwargs['grid_config']['depth'],
                                               kwargs['input_size'],
                                               downsample=cv_downsample)
