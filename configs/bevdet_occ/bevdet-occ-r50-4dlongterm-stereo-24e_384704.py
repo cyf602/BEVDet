@@ -60,7 +60,7 @@ voxel_size = [0.1, 0.1, 0.2]
 
 numC_Trans = 32
 
-multi_adj_frame_id_cfg = (1, 8+1, 1)
+multi_adj_frame_id_cfg = (1, 8+1, 1)##!
 
 model = dict(
     type='BEVStereo4DOCC',

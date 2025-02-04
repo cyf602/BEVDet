@@ -861,13 +861,17 @@ class CenterHead(BaseModule):
     
 @HEADS.register_module()
 class CenterHeadDetSeg(CenterHead):
-    def __init__(self,seg_dncoder,grid_config,map_grid_conf,loss_seg,
+    def __init__(self,seg_dncoder,grid_config,map_grid_conf,loss_seg,objseg_decoder=None,
                  pred_seg=True,pred_vec=True,vec_decoder=None,**kwargs):
         super(CenterHeadDetSeg, self).__init__(**kwargs)
         if pred_seg:
             self.seg_decoder = builder.build_head(seg_dncoder)
         if pred_vec:
             self.vec_decoder=builder.build_head(vec_decoder)
+        self.pred_objseg=False
+        if objseg_decoder:
+            self.objseg_decoder=builder.build_head(objseg_decoder)
+            self.pred_objseg=True
         self.feat_cropper = BevFeatureSlicer(grid_config, map_grid_conf)    
         self.pred_seg=pred_seg
         self.pred_vec=pred_vec
@@ -889,6 +893,8 @@ class CenterHeadDetSeg(CenterHead):
             x_ = self.shared_conv(x)
             for task in self.task_heads:#l=1
                 ret_dicts[0].update(task(x_))
+        if  self.pred_objseg:
+            ret_dicts['obj_seg']=self.objseg_decoder(x)
         if self.pred_seg:
             seg_bev = self.feat_cropper(x)#[B,256,?150->200,150->400]    
             seg_res=self.seg_decoder(seg_bev)

@@ -10,6 +10,7 @@ from mmcv.image import tensor2imgs
 import time
 from mmcv.runner import get_dist_info
 from mmdet3d.core.evaluation.seg_metric import IntersectionOverUnion
+# from mmdet.apis.test import collect_results_cpu
 from mmdet3d.models import (Base3DDetector, Base3DSegmentor,
                             SingleStageMono3DDetector)
 from mmdet3d.utils.logger import get_root_logger

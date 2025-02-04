@@ -24,7 +24,7 @@ from mmseg.core import DistEvalHook as MMSEG_DistEvalHook
 from mmseg.core import EvalHook as MMSEG_EvalHook
 from mmseg.datasets import build_dataloader as build_mmseg_dataloader
 from mmseg.utils import get_root_logger as get_mmseg_root_logger
-
+from mmdet3d.core.evaluation.eval_hooks import CustomDistEvalHook
 
 def init_random_seed(seed=None, device='cuda'):
     """Initialize random seed.
