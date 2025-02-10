@@ -79,6 +79,7 @@ class LoadOccGTFromFilev2(LoadTempOccGTFromFile):
         results['voxel_semantics'] = occ_labels['semantics']#[200,200,16]        
         results['voxel_flow']=occ_labels['flow']
         results['vismask']=occ_labels['vismask']
+        results['voxel_flow2d']=occ_labels['flow2d']
         next_occgt_path=results.get('next_occv2_path',None)
         if next_occgt_path:
             occ_next_gt_path = os.path.join(next_occgt_path, "labels.npz")
@@ -1641,6 +1642,9 @@ class BEVAugv2(BEVAug):
                 results['voxel_flow'] = results['voxel_flow'][::-1,...].copy()#
                 results['voxel_flow'][...,0] = -results['voxel_flow'][...,0].copy()
                 results['vismask']=results['vismask'][::-1,...].copy()
+                if 'voxel_flow2d' in results:
+                    results['voxel_flow2d']= results['voxel_flow2d'][::-1,...].copy()
+                    results['voxel_flow2d'][...,0]= -results['voxel_flow2d'][...,0].copy()
                 if 'next_voxel_semantics' in results:
                     results['next_voxel_semantics']=results['next_voxel_semantics'][::-1,...].copy()
                 if 'past_voxel_semamtics' in results:
@@ -1650,6 +1654,9 @@ class BEVAugv2(BEVAug):
                 results['voxel_flow'] = results['voxel_flow'][:,::-1,...].copy()
                 results['voxel_flow'][...,1] = -results['voxel_flow'][...,1].copy()
                 results['vismask']=results['vismask'][:,::-1,...].copy()
+                if 'voxel_flow2d' in results:
+                    results['voxel_flow2d']= results['voxel_flow2d'][:,::-1,...].copy()
+                    results['voxel_flow2d'][...,1]= -results['voxel_flow2d'][...,1].copy()
                 if 'next_voxel_semantics' in results:
                     results['next_voxel_semantics']=results['next_voxel_semantics'][:,::-1,...].copy()
                 if 'past_voxel_semamtics' in results:

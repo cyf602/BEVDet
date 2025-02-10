@@ -32,6 +32,7 @@ class BEVStereo4DOCC(BEVStereo4D):
                  future_flow_loss=None,#下一帧语义损失
                  num_extraconv2d=0,
                  flow_bev_encoder_neck=None,#bev fpn处解耦
+                 use_flow2d=False,
                  **kwargs):
         super(BEVStereo4DOCC, self).__init__(**kwargs)
         self.occupancy_size=[200,200,16]
@@ -47,6 +48,7 @@ class BEVStereo4DOCC(BEVStereo4D):
         #     bias=True,
         #     conv_cfg=dict(type='Conv2d'))
         self.num_extraconv2d=num_extraconv2d
+        self.use_flow2d=use_flow2d
         if pred_occ:
             self.occ_conv = ConvModule(
                             self.img_view_transformer.out_channels,
@@ -57,14 +59,32 @@ class BEVStereo4DOCC(BEVStereo4D):
                             bias=True,
                             conv_cfg=dict(type='Conv3d'))
         if pred_flow:
-            self.flow_conv = ConvModule(
-                            self.img_view_transformer.out_channels,
-                            out_channels,
-                            kernel_size=3,
-                            stride=1,
-                            padding=1,
-                            bias=True,
-                            conv_cfg=dict(type='Conv3d'))
+            if use_flow2d:
+                self.flow_zconv=ConvModule(#处理Z维度
+                                    self.occupancy_size[-1],
+                                    1,
+                                    kernel_size=3,
+                                    stride=1,
+                                    padding=1,
+                                    bias=True,
+                                    conv_cfg=dict(type='Conv2d'))
+                self.flow_conv = ConvModule(
+                                    self.img_view_transformer.out_channels,
+                                    out_channels,
+                                    kernel_size=3,
+                                    stride=1,
+                                    padding=1,
+                                    bias=True,
+                                    conv_cfg=dict(type='Conv2d'))
+            else:
+                self.flow_conv = ConvModule(
+                                self.img_view_transformer.out_channels,
+                                out_channels,
+                                kernel_size=3,
+                                stride=1,
+                                padding=1,
+                                bias=True,
+                                conv_cfg=dict(type='Conv3d'))
         occ_conv2ds,flow_conv2ds=[],[]
         for i in range(self.num_extraconv2d):
             occ_conv2ds.append(
@@ -131,7 +151,7 @@ class BEVStereo4DOCC(BEVStereo4D):
         self.pred_flow=pred_flow
         #vis
         self.vis_idx=0
-        self.show_dir ="/root/data/chuyunfeng/BEVDet/vis/Bevdet4d_occ"
+        self.show_dir ="vis/Bevdet4d_occ"
         self.tempsavedir='vis/vis_finalmask/'
         indices = np.indices((200,200, 16))#[3,x,y,z]
         self.indices=np.transpose(indices,(1,2,3,0)).reshape(-1,3)
@@ -145,10 +165,9 @@ class BEVStereo4DOCC(BEVStereo4D):
     def loss_single(self,voxel_semantics,preds_occ,voxel_flow,preds_flow=None,
                     mask_camera=None):
         loss_ = dict()
-        voxel_semantics=voxel_semantics.long().reshape(-1)
-        free=(voxel_semantics==self.num_classes-1)    
+        voxel_semantics=voxel_semantics.long()
         if preds_flow is not None:
-            B,H,W,Z,_=preds_flow.shape
+            B,H,W,ZF,_=preds_flow.shape#当flow2d z=1
             preds_flow = preds_flow.view(-1, 2)
             voxel_flow = voxel_flow.reshape(-1, 2)
             # non_obj=(voxel_semantics>=10)#ground etc.
@@ -163,7 +182,10 @@ class BEVStereo4DOCC(BEVStereo4D):
             # final_mask=torch.logical_or((rand_mask*static_class),obj_class)#只监督这些区域
             final_mask=obj_class
             if mask_camera is not None:
-                final_mask=torch.logical_and(final_mask,mask_camera.view(-1))
+                final_mask=torch.logical_and(final_mask,mask_camera)
+            if self.use_flow2d:
+                final_mask=torch.sum(final_mask,dim=-1)
+            final_mask=final_mask.view(-1)
             loss_['loss_flow']=self.loss_flow(preds_flow[final_mask], voxel_flow[final_mask],avg_factor=torch.sum(final_mask))
             #监督visible mask,nonfree
             # final_mask=torch.logical_and(mask_camera.view(-1),non_free)
@@ -171,6 +193,9 @@ class BEVStereo4DOCC(BEVStereo4D):
             # if preds_flow.device == torch.device('cuda:0'):
                 # self.vis_finalmask(final_mask,voxel_semantics,preds,voxel_flow,preds_flow,mask_camera.reshape(-1)*non_free)
         if preds_occ is not None:
+            B,H,W,ZC=voxel_semantics.shape
+            voxel_semantics=voxel_semantics.reshape(-1)
+            free=(voxel_semantics==self.num_classes-1)    
             if self.use_mask:#mask_camera is not None
                 # if isinstance(self.loss_occ,CustomFocalLoss):#focal from bevocc
                 #     pass
@@ -192,12 +217,12 @@ class BEVStereo4DOCC(BEVStereo4D):
         if preds_flow is not None  and self.vis_idx%1000==5 and preds_flow.device==torch.device('cuda:0'):
             preds_occ=preds_occ.detach().clone()
             preds_occ=preds_occ.argmax(dim=-1)
-            preds_occ=preds_occ.view(-1,H,W,Z)
-            preds_flow=preds_flow.detach().clone().view(B,H,W,Z,-1)
-            voxel_flow=voxel_flow.view(B,H,W,Z,-1)
-            voxel_semantics=voxel_semantics.view(B,H,W,Z)
-            mask=final_mask.view(B,H,W,Z)
-            occmask=occmask.view(B,H,W,Z)
+            preds_occ=preds_occ.view(-1,H,W,ZC)
+            preds_flow=preds_flow.detach().clone().view(B,H,W,ZF,-1)
+            voxel_flow=voxel_flow.view(B,H,W,ZF,-1)
+            voxel_semantics=voxel_semantics.view(B,H,W,ZC)
+            mask=final_mask.view(B,H,W,ZF)
+            occmask=occmask.view(B,H,W,ZC)
             vis_bev_view(preds_occ,voxel_semantics,preds_flow,voxel_flow,flowmask=mask,
                             occmask=occmask,save_root=self.show_dir+'mask',idx=self.vis_idx)
             # vis_mask3d(voxel_semantics[0,...],occmask[0,...],pred_occ=preds_occ[0,...],
@@ -233,20 +258,28 @@ class BEVStereo4DOCC(BEVStereo4D):
             else:
                 occ_score=occ_pred.softmax(-1)
                 occ_res=occ_score.argmax(-1)
-            occ_res = occ_res.squeeze(dim=0).cpu().numpy().astype(np.uint8)
+            occ_res = occ_res.squeeze(dim=0).cpu().numpy().astype(np.uint8)#squeeze: test时bs=1
         else:
             occ_res=None
         if self.pred_flow:
-            _flow_pred = self.flow_conv(img_feats[-1])
-            B,C,Z,H,W=_flow_pred.shape 
-            #[B*d,C(32),H,W]
+            B,C,Z,H,W=img_feats[-1].shape
+            if self.use_flow2d:
+                _flow_pred=self.flow_zconv(img_feats[-1].flatten(0,1)).reshape(B,C,H,W)
+                _flow_pred=self.flow_conv(_flow_pred).reshape(B,C,-1,H,W)
+            else:
+                _flow_pred = self.flow_conv(img_feats[-1])#[B,32,16,200,200]
             if self.num_extraconv2d>0:
                 _flow_pred=_flow_pred.transpose(1,2).reshape(-1,C,H,W)
                 _flow_pred=self.flow_conv2ds(_flow_pred)
                 _flow_pred=_flow_pred.reshape(-1,Z,C,H,W).transpose(1,2)
             _flow_pred=_flow_pred.permute(0, 4, 3, 2, 1) # bncdhw->bnwhdc   
-            flow_pred=self.flow_predicter(_flow_pred)  
+            flow_pred=self.flow_predicter(_flow_pred)  #[B(1),W,H,d,c]
             flow_pred=flow_pred.half().squeeze(dim=0).cpu().numpy()
+            if self.use_flow2d:
+                """预测2dflow时通过语义将flow对其3d"""
+                flow_pred=flow_pred.repeat(Z,axis=2)
+                occ_sta=(occ_res>8)[...,None].repeat(2,axis=-1)
+                flow_pred[occ_sta]=0
         else:
             flow_pred=np.zeros((W,H,Z,2),dtype=np.float16)
         return [{'occ_results':occ_res,'flow_results':flow_pred}]
@@ -309,8 +342,13 @@ class BEVStereo4DOCC(BEVStereo4D):
             occ_pred=None
                 
         if self.pred_flow:
-            _flow_pred = self.flow_conv(img_feats[-1])
-            B,C,Z,H,W=_flow_pred.shape 
+            B,C,Z,H,W=img_feats[-1].shape
+            if self.use_flow2d:
+                _flow_pred=self.flow_zconv(img_feats[-1].flatten(0,1)).reshape(B,C,H,W)
+                _flow_pred=self.flow_conv(_flow_pred).reshape(B,C,-1,H,W)
+            else:
+                _flow_pred = self.flow_conv(img_feats[-1])#[B,32,16,200,200]
+            # B,C,Z,H,W=_flow_pred.shape 
             #[B*d,C(32),H,W]
             if self.num_extraconv2d>0:#额外添加两层conv2d，用处不大
                 _flow_pred=_flow_pred.transpose(1,2).reshape(-1,C,H,W)
@@ -322,7 +360,7 @@ class BEVStereo4DOCC(BEVStereo4D):
         else:
             flow_pred=None
         voxel_semantics = kwargs['voxel_semantics']#[B,200,200,16]
-        voxel_flow=kwargs.get('voxel_flow',None)
+        voxel_flow=kwargs.get('voxel_flow2d',None) if self.use_flow2d else kwargs['voxel_flow']
         # dstamp=kwargs.get('dstamp',None)
         # ego2next_mat=kwargs.get('ego2next_mat',None)
         

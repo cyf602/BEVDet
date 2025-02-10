@@ -80,6 +80,7 @@ model = dict(
     num_extraconv2d=0,#conv2d nums in head
     pred_flow=True,
     pred_occ=True,
+    use_flow2d=True,
     img_backbone=dict(
         # pretrained='torchvision://resnet50',
         pretrained='ckpts/resnet101-5d3b4d8f.pth',
@@ -107,6 +108,7 @@ model = dict(
         out_channels=numC_Trans,
         collapse_z=False,
         depthnet_cfg=dict(use_dcn=False, aspp_mid_channels=96),
+        loss_depth_weight=0.25,
         downsample=8),
     # img_bev_encoder_backbone=dict(
     #     type='CustomResNet3D',
@@ -161,8 +163,8 @@ file_client_args = dict(backend='disk')
 bda_aug_conf = dict(
     rot_lim=(-0., 0.),
     scale_lim=(1., 1.),
-    flip_dx_ratio=0.,
-    flip_dy_ratio=0.)
+    flip_dx_ratio=0.5,
+    flip_dy_ratio=0.5)
 
 train_pipeline = [
     dict(
@@ -186,8 +188,8 @@ train_pipeline = [
     dict(type='PointToMultiViewDepth', downsample=1, grid_config=grid_config),
     dict(type='DefaultFormatBundle3D', class_names=class_names),
     dict(
-        type='Collect3D', keys=['img_inputs', 'gt_depth', 'voxel_semantics','next_voxel_semantics',
-                                'voxel_flow','vismask','dstamp','ego2next_mat'])
+        type='Collect3D', keys=['img_inputs', 'gt_depth', 'voxel_semantics',#'next_voxel_semantics',
+                                'voxel_flow','vismask','voxel_flow2d','dstamp','ego2next_mat'])
 ]
 
 test_pipeline = [
@@ -282,9 +284,9 @@ lr_config = dict(
     warmup='linear',
     warmup_iters=200,
     warmup_ratio=0.001,
-    step=[100,])
-checkpoint_config = dict(interval=3)
-evaluation = dict(interval=3, pipeline=test_pipeline)
+    step=[22,27])
+checkpoint_config = dict(interval=1)
+evaluation = dict(interval=30, pipeline=test_pipeline)
 runner = dict(type='EpochBasedRunner', max_epochs=30)
 
 # custom_hooks = [
@@ -295,5 +297,5 @@ runner = dict(type='EpochBasedRunner', max_epochs=30)
 #     ),
 # ]
 # resume_from="work_dirs/bevdepth-newmaskt2_50free_1029/epoch_21.pth"
-# resume_from="work_dirs/bevdepth-newmaskt2_1024/epoch_10.pth"
+# resume_from="work_dirs/bevdepthocc-0207/epoch_6.pth"
 # fp16 = dict(loss_scale='dynamic')
