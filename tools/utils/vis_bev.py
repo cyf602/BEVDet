@@ -168,4 +168,62 @@ def vis_mask3d(occ_gt,mask,save_idx=0,pred_occ=None,
     # np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
     
     
-    
+def vis_flow_gt(data_infos,savevis_root="vis/flowgt/"):
+    #可视化3d和2dflow
+    max_v=3
+    for i,data_info in enumerate(data_infos):
+        occ_gt = dict(np.load(data_info['occv2_path']+'/labels.npz', allow_pickle=True))
+        flow3d=occ_gt['flow']
+        flow2d=occ_gt['flow2d']
+        semantics=occ_gt['semantics']
+        flow3d_sq=np.linalg.norm(flow3d, axis=-1)
+        W,H,Z,D=flow3d.shape
+        free=(semantics==16)#0~16类别号
+        # d=np.arange(Z).repeat(H,W,1)*(~free)
+        # selected = np.argmax(d, axis=-1)#最高点序号？
+        flow3d_v=np.linalg.norm(flow3d,axis=-1)
+        flow3d_bev_v=np.max(flow3d_v,axis=-1)
+        flow3d_bev_x=np.max(flow3d[...,0],axis=-1)
+        flow3d_bev_y=np.max(flow3d[...,1],axis=-1)
+        flow2d_bev_v=np.sqrt(flow2d[...,0]**2,flow2d[...,1]**2)
+        flow2d_bev_x=flow2d[...,0]
+        flow2d_bev_y=flow2d[...,1]
+        flows=[]
+        channel_change=np.array([0,0,1])[None,None,:]
+        for v2d,v3d in zip([flow2d_bev_x,flow2d_bev_y,flow2d_bev_v],[flow3d_bev_x,
+                flow3d_bev_y,flow3d_bev_v]):
+            max_v=np.max(v3d)
+            v2d=v2d[...,None]/max_v*255*channel_change
+            v3d=v3d[...,None]/max_v*255*channel_change
+            flows.append(cv2.resize(v2d,(1024,1024)))
+            flows.append(cv2.resize(v3d,(1024,1024)))
+        flow2ds=np.concatenate(flows[::2],axis=1)
+        flow3ds=np.concatenate(flows[1::2],axis=1)
+        flowspic=np.concatenate([flow2ds,flow3ds],axis=0)
+        mmcv.imwrite(flowspic,savevis_root+str(i)+".png")
+
+def vis_gt_txt(npz_file,save_root='vis/vis3d/gt'):
+    #将单一文件转为txt 用于cloudcompare可视化
+    occ_data=np.load(npz_file)
+    occgt=occ_data['semantics']
+    vismask=occ_data['vismask']
+
+def vis_gt_txts(infos,save_root='vis/vis3d/gt'):
+    if not os.path.exists(save_root):
+        os.makedirs(save_root)
+    for info in infos:
+        npzfile=os.path.join(info['occv2_path'],'labels.npz')
+        vis_gt_txt(npzfile,save_root)
+
+if __name__=="__main__":
+    pkl_file="data/nuscenes/bevdetv3-nuscenes_infos_train.pkl"
+    savevis_root="vis/flowgt/"
+    data=mmcv.load(pkl_file)
+    data_infos = data['infos']
+
+    # vis_flow_gt(data_infos)
+
+            
+
+
+
