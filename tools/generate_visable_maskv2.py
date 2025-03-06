@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVIES"]="3"
+os.environ["CUDA_VISIBLE_DEVIES"]="0"
 import glob
 import numpy as np
 import math
@@ -294,7 +294,7 @@ if __name__=="__main__":
         # pcd_gt = process_one_sample(sem_gt, lidar_rays, lidar_origins, flow_gt)#[8*N,4]
 
         # gt_dict=generate_coords(sem_gt, lidar_rays, lidar_origins,flow_gt)
-    ann_file='data/nuscenes/bevdetv3-nuscenes_infos_train.pkl'
+    ann_file='data/nuscenes/bevdetv3-nuscenes_infos_val.pkl'
     print("processing:",ann_file)
     data = mmcv.load(ann_file)
     data_infos = data['infos']
@@ -339,6 +339,7 @@ if __name__=="__main__":
         # data_id = sample_tokens.index(token)
         # info = data_infos[data_id]
         info =data_infos[i]
+        if not os.path.exists(info['occv2_path']):continue
         if os.path.exists(info['occv2_path'].replace('openocc_v2','openocc_v2_nextrend1112')):
             print(i,"finisned")
             continue

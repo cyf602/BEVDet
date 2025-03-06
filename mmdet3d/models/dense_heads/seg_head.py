@@ -50,7 +50,7 @@ class SegEncode(nn.Module):
         
 
     def forward(self, x): #torch.Size([2, 256, 200, 400])
-        x = self.conv1(x) #torch.Size([2, 64, 200, 400])
+        x = self.conv1(x) #torch.Size([2, 64, 100, 200])
         x = self.bn1(x)
         x = self.relu(x)
 
