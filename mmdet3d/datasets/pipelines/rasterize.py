@@ -52,10 +52,10 @@ class RasterizeMapVectors(object):
         semantic_masks, instance_masks, forward_masks, backward_masks = preprocess_map(
             vectors, self.map_patch_size, self.map_canvas_size, self.map_max_channel, self.map_thickness, self.map_angle_class)
 
-        semantic_masks = semantic_masks.numpy()
+        semantic_masks = semantic_masks.numpy()#nc,200,400
         num_cls = semantic_masks.shape[0]
-        indices = np.arange(1, num_cls + 1).reshape(-1, 1, 1)
-        semantic_indices = np.sum(semantic_masks * indices, axis=0)
+        indices = np.arange(1, num_cls + 1).reshape(-1, 1, 1)#[1,2,3](类别号)
+        semantic_indices = np.sum(semantic_masks * indices, axis=0)#200,400 类别代号
 
         results.update({
             'semantic_map': torch.from_numpy(semantic_masks),

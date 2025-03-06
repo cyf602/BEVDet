@@ -22,7 +22,7 @@ from .ssd3dnet import SSD3DNet
 from .votenet import VoteNet
 from .voxelnet import VoxelNet
 from .bevdetseg import BEVDepth4D_Multitask,BEVDepth4DFormer_Multitask
-
+from .det2d import Det2D
 __all__ = [
     'Base3DDetector', 'VoxelNet', 'DynamicVoxelNet', 'MVXTwoStageDetector',
     'DynamicMVXFasterRCNN', 'MVXFasterRCNN', 'PartA2', 'VoteNet', 'H3DNet',
@@ -30,5 +30,6 @@ __all__ = [
     'FCOSMono3D', 'ImVoxelNet', 'GroupFree3DNet', 'PointRCNN', 'SMOKEMono3D',
     'MinkSingleStage3DDetector', 'SASSD', 'BEVDet', 'BEVDet4D', 'BEVDepth4D',
     'BEVDetTRT', 'BEVStereo4D', 'BEVStereo4DOCC','BEVDepth4D_Multitask',
-    'BEVDepth4DFormer_Multitask','BEVDepth4DOCC','BEVDepthformerOCC'
+    'BEVDepth4DFormer_Multitask','BEVDepth4DOCC','BEVDepthformerOCC',
+    'Det2D'
 ]

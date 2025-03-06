@@ -25,10 +25,10 @@ def get_discrete_degree(vec, angle_class=36):
     return deg
 
 def overlap_filter(mask, filter_mask):
-    C, _, _ = mask.shape
+    C, _, _ = mask.shape#3，200，400
     for c in range(C-1, -1, -1):
         filter = np.repeat((filter_mask[c] != 0)[None, :], c, axis=0)
-        mask[:c][filter] = 0
+        mask[:c][filter] = 0#重复的mask取后一个
 
     return mask
 
@@ -55,7 +55,7 @@ def preprocess_map(vectors, patch_size, canvas_size, max_channel, thickness, ang
         map_mask, idx = line_geom_to_mask(
             vector_num_list[i], confidence_levels, local_box, canvas_size, thickness, idx)
         instance_masks.append(map_mask)
-        filter_mask, _ = line_geom_to_mask(
+        filter_mask, _ = line_geom_to_mask(#除了thickness都一样？
             vector_num_list[i], confidence_levels, local_box, canvas_size, thickness + 4, 1)
         filter_masks.append(filter_mask)
         forward_mask, _ = line_geom_to_mask(
@@ -123,7 +123,7 @@ def line_geom_to_mask(layer_geom, confidence_levels, local_box, canvas_size, thi
         if not new_line.is_empty:
             new_line = affinity.affine_transform(
                 new_line, [1.0, 0.0, 0.0, 1.0, trans_x, trans_y])
-            new_line = affinity.scale(
+            new_line = affinity.scale(#向map尺寸缩放
                 new_line, xfact=scale_width, yfact=scale_height, origin=(0, 0))
             confidence_levels.append(confidence)
             if new_line.geom_type == 'MultiLineString':

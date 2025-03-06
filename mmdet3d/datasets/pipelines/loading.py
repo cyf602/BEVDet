@@ -11,6 +11,8 @@ from pyquaternion import Quaternion
 
 from mmdet3d.core.points import BasePoints, get_points_type
 from mmdet.datasets.pipelines import LoadAnnotations, LoadImageFromFile
+
+from mmdet3d.utils.vis_2dgt import vis_single_det_and_seg
 from ...core.bbox import LiDARInstance3DBoxes
 from ..builder import PIPELINES
 from torch.nn import functional as F
@@ -1140,7 +1142,7 @@ class PrepareImageInputs(object):
         for i,cam_name in enumerate(cam_names):
             cam_data = results['curr']['cams'][cam_name]
             filename = cam_data['data_path']
-            img = Image.open(filename)
+            img = Image.open(filename)#img.mode='RGB'
             post_rot = torch.eye(2)
             post_tran = torch.zeros(2)
 
@@ -1177,13 +1179,13 @@ class PrepareImageInputs(object):
                         flip=flip,
                     )
                 if len(gt_bboxes) != 0 and self.filter_invisible:
-                    gt_bboxes, centers2d, labels2d, depths =  self._filter_invisible(gt_bboxes, centers2d, labels2d, depths)
+                    gt_bboxes, centers2d, labels2d, depths,sem_map =  self._filter_invisible(gt_bboxes, centers2d, labels2d, depths)
 
                 new_gt_bboxes.append(gt_bboxes.reshape(-1,4))
                 new_centers2d.append(centers2d.reshape(-1,2))
                 new_labels2d.append(labels2d)
                 new_depths.append(depths)
-            
+            # vis_single_det_and_seg(img,gt_bboxes,labels2d,sem_map)#
             # for convenience, make augmentation matrices 3x3
             post_tran = torch.zeros(3)
             post_rot = torch.eye(3)
@@ -1225,7 +1227,8 @@ class PrepareImageInputs(object):
         results['bboxes2d_xyxy'] = new_gt_bboxes
         results['centers2d'] = new_centers2d
         results['labels2d'] = new_labels2d
-        results['bboxdepths2d'] = new_depths   
+        results['bboxdepths2d'] = new_depths
+        results['sem2d']=sem_map   
         if self.sequential:#T
             for adj_info in results['adjacent']:
                 post_trans.extend(post_trans[:len(cam_names)])
@@ -1291,6 +1294,7 @@ class PrepareImageInputs(object):
         assert len(bboxes) == len(centers2d) == len(gt_labels) == len(depths)
         fH, fW = self.data_aug_conf["input_size"]
         indices_maps = np.ones((fH,fW))* (len(bboxes)-1)#zeros_like会把最远保留
+        sem_map=np.ones((fH,fW))*(-1)#顺百年生成语义分割图
         tmp_bboxes = np.zeros_like(bboxes)
         tmp_bboxes[:, :2] = np.ceil(bboxes[:, :2])
         tmp_bboxes[:, 2:] = np.floor(bboxes[:, 2:])
@@ -1304,6 +1308,7 @@ class PrepareImageInputs(object):
         for i in range(bboxes.shape[0]):#从远到近
             u1, v1, u2, v2 = tmp_bboxes[i]
             indices_maps[v1:v2, u1:u2] = i#靠近的会把远处的覆盖
+            sem_map[v1:v2, u1:u2]=gt_labels[i]
         indices_res = np.unique(indices_maps).astype(np.int64)
         indices_area=np.array([np.sum(indices_maps==ind) for ind in indices_res])
         indices_res=indices_res[indices_area>self.min_size]
@@ -1312,7 +1317,7 @@ class PrepareImageInputs(object):
         centers2d = centers2d[indices_res]
         gt_labels = gt_labels[indices_res]
 
-        return bboxes, centers2d, gt_labels, depths
+        return bboxes, centers2d, gt_labels, depths,sem_map
 
     def __call__(self, results):
         results['img_inputs'] = self.get_inputs(results)
