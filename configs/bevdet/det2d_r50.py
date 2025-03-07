@@ -191,9 +191,10 @@ train_pipeline = [
                                 # 'gt_depth','semantic_indices',
                                 'bboxes2d_xyxy','labels2d','centers2d'],
         meta_keys=('token', 'sample_idx',
-       'img_shape', 'scene_name'     # 'labels2d','bboxes2d',
+       'img_shape', 'scene_name',     # 'labels2d','bboxes2d',
         # 'bboxes2d_xyxy','centers2d','labels2d','bboxdepths2d'
         # 'pts_filename','box_mode_3d','box_type_3d'
+        'canvas'
         ))
 ]
 
@@ -229,8 +230,8 @@ share_data_config = dict(
     modality=input_modality,
     img_info_prototype='bevdet4d',
     multi_adj_frame_id_cfg=multi_adj_frame_id_cfg,
-    version="v1.0-mini",
-    # version="v1.0-trainval",
+    # version="v1.0-mini",
+    version="v1.0-trainval",
 )
 
 test_data_config = dict(

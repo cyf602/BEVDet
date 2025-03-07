@@ -1178,6 +1178,8 @@ class PrepareImageInputs(object):
                         crop=crop,
                         flip=flip,
                     )
+                fH, fW = self.data_aug_conf["input_size"]
+                sem_map=np.ones((fH,fW))*(-1)
                 if len(gt_bboxes) != 0 and self.filter_invisible:
                     gt_bboxes, centers2d, labels2d, depths,sem_map =  self._filter_invisible(gt_bboxes, centers2d, labels2d, depths)
 
@@ -1192,7 +1194,7 @@ class PrepareImageInputs(object):
             post_tran[:2] = post_tran2
             post_rot[:2, :2] = post_rot2
 
-            if self.is_train and self.data_config.get('pmd', None) is not None:
+            if self.is_train and self.data_config.get('pmd', None) is not None:#None
                 img = self.photo_metric_distortion(img, self.data_config['pmd'])
 
             canvas.append(np.array(img))
@@ -1294,7 +1296,7 @@ class PrepareImageInputs(object):
         assert len(bboxes) == len(centers2d) == len(gt_labels) == len(depths)
         fH, fW = self.data_aug_conf["input_size"]
         indices_maps = np.ones((fH,fW))* (len(bboxes)-1)#zeros_like会把最远保留
-        sem_map=np.ones((fH,fW))*(-1)#顺百年生成语义分割图
+        sem_map=np.ones((fH,fW))*(-1)#顺便生成语义分割图
         tmp_bboxes = np.zeros_like(bboxes)
         tmp_bboxes[:, :2] = np.ceil(bboxes[:, :2])
         tmp_bboxes[:, 2:] = np.floor(bboxes[:, 2:])

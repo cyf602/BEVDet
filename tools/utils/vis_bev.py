@@ -142,7 +142,7 @@ def vis_bev_view(occ_preds=None,occ_gts=None,flow_preds=None,flow_gts=None,idx=0
 def vis_mask3d(occ_gt,mask,save_idx=0,pred_occ=None,
                pred_flow=None,save_root='vis/vis3d'):
     if not os.path.exists(save_root):
-        os.mkdir(save_root)
+        os.makedirs(save_root)
     X,Y,Z=200,200,16
     voxel_size=0.4
     indices = np.indices((X, Y, Z))#[3,x,y,z]

@@ -37,6 +37,10 @@ nus_categories = {0:'car', 1:'truck', 2:'trailer', 3:'bus', 4:'construction_vehi
 
 
 def vis_img_and_labels(imgs,bboxes,labels=None):
+    """
+    bboxes,labels: len=6 list, torch shape[n,4],[n]
+    imgs:[6,3,267,704] np array uint8
+    """
     global vis_id
     assert len(imgs)==len(bboxes)==6
     l=len(imgs)
@@ -49,15 +53,17 @@ def vis_img_and_labels(imgs,bboxes,labels=None):
             cls_name=nus_categories[catid]
             cv2.rectangle(img,bbox[:2],bbox[2:],color,2)
         cv2.imwrite(save_root+str(vis_id)+str(cam)+'.jpg',img)
-        print('save 2d img and labels:',save_root+str(vis_id)+str(cam)+'jpg')
+        print('save 2d img and labels:',save_root+str(vis_id)+str(cam)+'.jpg')
     vis_id+=1
     
-def vis_single_det_and_seg(img,bboxes=None,labels=None,seg=None,cam="un"):
+def vis_single_det_and_seg(img,bboxes=None,labels=None,seg=None,cam="un",idx=None):
     """为一张图可视化检测框和分割
     
     """
     img=np.array(img)
-
+    global vis_id
+    if idx is None:
+        idx=vis_id 
     if bboxes is not None:
         for j,bbox in enumerate(bboxes):#np [N,4]
             bbox=bbox.astype(np.int16)#.cpu().numpy()
@@ -74,4 +80,5 @@ def vis_single_det_and_seg(img,bboxes=None,labels=None,seg=None,cam="un"):
         for typeid in range(10):
             color=colormap[typeid]
             seg_pic[seg==typeid]=color
-        cv2.imwrite(save_root+str(vis_id)+str(cam)+'seg.jpg',seg_pic)
+        cv2.imwrite(save_root+str(idx)+str(cam)+'seg.jpg',seg_pic)
+    vis_id+=1

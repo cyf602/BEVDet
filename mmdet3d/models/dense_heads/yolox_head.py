@@ -15,8 +15,9 @@ from mmdet.core import (MlvlPointGenerator, bbox_xyxy_to_cxcywh,
 from mmdet.models.builder import HEADS, build_loss
 from mmdet.models.dense_heads.base_dense_head import BaseDenseHead
 from mmdet.models.dense_heads.dense_test_mixins import BBoxTestMixin
-
-
+import os
+import cv2
+from mmdet3d.utils.vis_2dgt import vis_single_det_and_seg
 @HEADS.register_module()
 class YOLOXHeadCustom(BaseDenseHead, BBoxTestMixin):
     """YOLOXHead head used in `YOLOX <https://arxiv.org/abs/2107.08430>`_.
@@ -119,6 +120,10 @@ class YOLOXHeadCustom(BaseDenseHead, BBoxTestMixin):
         self.train_cfg = train_cfg
 
         self.sampling = False
+        self.vis_idx=0
+        from datetime import datetime
+        self.save_vis2d_root="vis/vis2d/"+datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+        os.mkdir(self.save_vis2d_root)
         if self.train_cfg:
             self.assigner = build_assigner(self.train_cfg.assigner)
             # sampling=False so use PseudoSampler
@@ -262,7 +267,7 @@ class YOLOXHeadCustom(BaseDenseHead, BBoxTestMixin):
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'objectnesses', 'centers2d'))
     def loss(self,
-             gt_bboxes2d_list,
+             gt_bboxes2d_list,#len=bs，里面len=视角数
              gt_labels2d_list,
              centers2d,
              preds_dicts,
@@ -270,6 +275,7 @@ class YOLOXHeadCustom(BaseDenseHead, BBoxTestMixin):
              img_metas=None, #len=B
              gt_bboxes_ignore=None):
         """Compute loss of the head.`
+        https://blog.csdn.net/weixin_47004707/article/details/130909255
         Args:
             cls_scores (list[Tensor]): Box scores for each scale level,
                 each is a 4D-tensor, the channel number is
@@ -292,7 +298,7 @@ class YOLOXHeadCustom(BaseDenseHead, BBoxTestMixin):
         bbox_preds = preds_dicts['enc_bbox_preds']
         objectnesses = preds_dicts['objectnesses']
         centers2d_offset = preds_dicts['pred_centers2d_offset']
-        num_imgs = cls_scores[0].shape[0]
+        num_imgs = cls_scores[0].shape[0]#N(6)*bs
         featmap_sizes = [cls_score.shape[2:] for cls_score in cls_scores]
         mlvl_priors = self.prior_generator.grid_priors(
             featmap_sizes,
@@ -305,7 +311,7 @@ class YOLOXHeadCustom(BaseDenseHead, BBoxTestMixin):
                                                  self.cls_out_channels)
             for cls_pred in cls_scores
         ]
-        flatten_bbox_preds = [
+        flatten_bbox_preds = [#[nimg,16*44,4]
             bbox_pred.permute(0, 2, 3, 1).reshape(num_imgs, -1, 4)
             for bbox_pred in bbox_preds
         ]
@@ -345,18 +351,18 @@ class YOLOXHeadCustom(BaseDenseHead, BBoxTestMixin):
         num_total_samples = max(reduce_mean(num_pos), 1.0)
 
         pos_masks = torch.cat(pos_masks, 0)
-        cls_targets = torch.cat(cls_targets, 0)
-        obj_targets = torch.cat(obj_targets, 0)
-        bbox_targets = torch.cat(bbox_targets, 0)
+        cls_targets = torch.cat(cls_targets, 0)#[N,nc]
+        obj_targets = torch.cat(obj_targets, 0)#[16*44*n*bs,1]
+        bbox_targets = torch.cat(bbox_targets, 0)#[n,4]
         if self.use_l1:
             l1_targets = torch.cat(l1_targets, 0)
         centers2d_target = torch.cat(centers2d_target, 0)
 
-        loss_bbox = self.loss_bbox(
-            flatten_bboxes.view(-1, 4)[pos_masks],
+        loss_bbox = self.loss_bbox(#IoU
+            flatten_bboxes.view(-1, 4)[pos_masks],#[N,4]
             bbox_targets) / num_total_samples
         loss_obj = self.loss_obj(flatten_objectness.view(-1, 1),
-                                 obj_targets) / num_total_samples
+                                 obj_targets) / num_total_samples#像素有obj的概率
         loss_cls = self.loss_cls(
             flatten_cls_preds.view(-1, self.num_classes)[pos_masks],
             cls_targets) / num_total_samples
@@ -372,7 +378,11 @@ class YOLOXHeadCustom(BaseDenseHead, BBoxTestMixin):
                 flatten_bbox_preds.view(-1, 4)[pos_masks],
                 l1_targets) / num_total_samples
             loss_dict.update(enc_loss_bbox=loss_l1)
+        if self.vis_idx%100<100:
+            for i,img in enumerate(img_metas[0]['canvas']):
 
+                vis_single_det_and_seg(img,gt_bboxes2d_list[0][i].cpu().numpy(),gt_labels2d_list[0][i].cpu().numpy(),idx=str(self.vis_idx)+'_'+str(i))
+        self.vis_idx+=len(img_metas)#bs
         return loss_dict
 
     @torch.no_grad()
