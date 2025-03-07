@@ -217,7 +217,7 @@ class YOLOXHeadCustom(BaseDenseHead, BBoxTestMixin):
             tuple[Tensor]: A tuple of multi-level predication map, each is a
                 4D-tensor of shape (batch_size, 5+num_classes, height, width).
         """
-        feats = data['img_feats']
+        feats = data['img_feats']#要放到list里[B,N,C,116,44]
         cls_scores, bbox_preds, objectnesses, centers2d_offsets= multi_apply(self.forward_single, feats,
                            self.multi_level_cls_convs,
                            self.multi_level_reg_convs,
@@ -294,7 +294,7 @@ class YOLOXHeadCustom(BaseDenseHead, BBoxTestMixin):
             gt_bboxes_ignore (None | list[Tensor]): specify which bounding
                 boxes can be ignored when computing the loss.
         """
-        cls_scores = preds_dicts['enc_cls_scores']
+        cls_scores = preds_dicts['enc_cls_scores']#[6,10,16,44]
         bbox_preds = preds_dicts['enc_bbox_preds']
         objectnesses = preds_dicts['objectnesses']
         centers2d_offset = preds_dicts['pred_centers2d_offset']
@@ -311,7 +311,7 @@ class YOLOXHeadCustom(BaseDenseHead, BBoxTestMixin):
                                                  self.cls_out_channels)
             for cls_pred in cls_scores
         ]
-        flatten_bbox_preds = [#[nimg,16*44,4]
+        flatten_bbox_preds = [#[nimg*bs,16*44,4]
             bbox_pred.permute(0, 2, 3, 1).reshape(num_imgs, -1, 4)
             for bbox_pred in bbox_preds
         ]
@@ -325,18 +325,18 @@ class YOLOXHeadCustom(BaseDenseHead, BBoxTestMixin):
         ]
 
         flatten_cls_preds = torch.cat(flatten_cls_preds, dim=1)
-        flatten_bbox_preds = torch.cat(flatten_bbox_preds, dim=1)
+        flatten_bbox_preds = torch.cat(flatten_bbox_preds, dim=1)#L=1(特征图数量)out of list 
         flatten_objectness = torch.cat(flatten_objectness, dim=1)
         flatten_centers2d_offset = torch.cat(flatten_centers2d_offset, dim=1)
         flatten_priors = torch.cat(mlvl_priors)
-        flatten_bboxes = self._bbox_decode(flatten_priors, flatten_bbox_preds)
+        flatten_bboxes = self._bbox_decode(flatten_priors, flatten_bbox_preds)#[n*bs,704,4]
 
         gt_bboxes = [bboxes2d for i in gt_bboxes2d_list for bboxes2d in i]
         gt_labels = [labels2d for i in gt_labels2d_list for labels2d in i]
         centers2d = [center2d for i in centers2d for center2d in i]
 
-        (pos_masks, cls_targets, obj_targets, bbox_targets, l1_targets, centers2d_target,
-         num_fg_imgs) = multi_apply(
+        (pos_masks_list, cls_targets_list, obj_targets_list, bbox_targets_list, l1_targets, centers2d_target,
+         num_fg_imgs) = multi_apply(#list l=6*bs
              self._get_target_single, flatten_cls_preds.detach(),
              flatten_objectness.detach(),
              flatten_priors.unsqueeze(0).repeat(num_imgs, 1, 1),
@@ -350,10 +350,10 @@ class YOLOXHeadCustom(BaseDenseHead, BBoxTestMixin):
             device=flatten_cls_preds.device)
         num_total_samples = max(reduce_mean(num_pos), 1.0)
 
-        pos_masks = torch.cat(pos_masks, 0)
-        cls_targets = torch.cat(cls_targets, 0)#[N,nc]
-        obj_targets = torch.cat(obj_targets, 0)#[16*44*n*bs,1]
-        bbox_targets = torch.cat(bbox_targets, 0)#[n,4]
+        pos_masks = torch.cat(pos_masks_list, 0)#L=12 [704]->[704*12]
+        cls_targets = torch.cat(cls_targets_list, 0)#[N,nc]->各帧目标加起来
+        obj_targets = torch.cat(obj_targets_list, 0)#[16*44*n*bs,1]
+        bbox_targets = torch.cat(bbox_targets_list, 0)#[n,4]
         if self.use_l1:
             l1_targets = torch.cat(l1_targets, 0)
         centers2d_target = torch.cat(centers2d_target, 0)
@@ -378,11 +378,12 @@ class YOLOXHeadCustom(BaseDenseHead, BBoxTestMixin):
                 flatten_bbox_preds.view(-1, 4)[pos_masks],
                 l1_targets) / num_total_samples
             loss_dict.update(enc_loss_bbox=loss_l1)
-        if self.vis_idx%100<100:
+        if self.vis_idx%100==10:
+            flatten_cls_pr=torch.argmax(flatten_cls_preds,dim=-1)#[N*bs,704,10]->[N*bs,704]
             for i,img in enumerate(img_metas[0]['canvas']):
-
-                vis_single_det_and_seg(img,gt_bboxes2d_list[0][i].cpu().numpy(),gt_labels2d_list[0][i].cpu().numpy(),idx=str(self.vis_idx)+'_'+str(i))
-        self.vis_idx+=len(img_metas)#bs
+                vis_single_det_and_seg(img.copy(),gt_bboxes2d_list[0][i].cpu().numpy(),gt_labels2d_list[0][i].cpu().numpy(),idx=str(self.vis_idx)+'_'+str(i))
+                vis_single_det_and_seg(img.copy(),flatten_bboxes[i][pos_masks[i]].detach().cpu().numpy(),flatten_cls_pr[i][pos_masks[i]].cpu().numpy(),idx=str(self.vis_idx)+'_pr'+str(i))
+        self.vis_idx+=1#len(img_metas)#bs
         return loss_dict
 
     @torch.no_grad()

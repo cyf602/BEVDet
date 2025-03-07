@@ -72,7 +72,8 @@ def vis_single_det_and_seg(img,bboxes=None,labels=None,seg=None,cam="un",idx=Non
             cls_name=nus_categories[catid]
             cv2.putText(img,cls_name,bbox[:2],fontFace=2,fontScale=1.,color=color)
             cv2.rectangle(img,bbox[:2],bbox[2:],color,2)
-        cv2.imwrite(save_root+str(vis_id)+str(cam)+'.jpg',img)
+        if not cv2.imwrite(save_root+str(idx)+str(cam)+'.jpg',img):
+            print("vis:"+save_root+str(idx)+str(cam)+'.jpg failed!!!')
     if seg:
         # seg=seg.transpose(1,0)#to 704 256
         W,H=seg.shape
@@ -80,5 +81,8 @@ def vis_single_det_and_seg(img,bboxes=None,labels=None,seg=None,cam="un",idx=Non
         for typeid in range(10):
             color=colormap[typeid]
             seg_pic[seg==typeid]=color
-        cv2.imwrite(save_root+str(idx)+str(cam)+'seg.jpg',seg_pic)
+        if not cv2.imwrite(save_root+str(idx)+str(cam)+'seg.jpg',seg_pic):
+            print("vis:"+save_root+str(idx)+str(cam)+'seg.jpg failed!!!')
+            
+        
     vis_id+=1

@@ -42,9 +42,10 @@ class Det2D(MVXTwoStageDetector):
         if self.with_img_neck:
             x = self.img_neck(x)
             if type(x) in [list, tuple]:
-                x=x[0]
-        _, output_dim, ouput_H, output_W = x.shape
-        x = x.view(B, N, output_dim, ouput_H, output_W)
+                xshape=x[0].shape
+                x=[f.view(B, N, *xshape[1:]) for f in x]
+        # _, output_dim, ouput_H, output_W = x[0].shape
+        # x = x.view(B, N, output_dim, ouput_H, output_W)
         feats={'img_feats':x}
         outs_2d=self.det2t_head(**feats)
 
