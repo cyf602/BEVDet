@@ -166,7 +166,7 @@ model = dict(
         map_grid_conf=map_grid_conf,
         in_channels=256,
         pred_det=True,
-        pred_seg=True,
+        pred_seg=False,
         pred_vec=False,
         loss_seg=dict(
                 type='CrossEntropyLoss',
@@ -298,6 +298,7 @@ train_pipeline = [
         # 'labels2d','bboxes2d',
         # 'bboxes2d_xyxy','centers2d','labels2d','bboxdepths2d'
         # 'pts_filename','box_mode_3d','box_type_3d'
+        "canvas"
         ))
 ]
 

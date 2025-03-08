@@ -53,7 +53,7 @@ class DefaultFormatBundle(object):
         for key in [
                 'proposals', 'gt_bboxes', 'gt_bboxes_ignore', 'gt_labels',
                 'gt_labels_3d', 'attr_labels', 'pts_instance_mask',
-                'pts_semantic_mask', 'centers2d', 'depths','bboxes2d_xyxy','labels2d'
+                'pts_semantic_mask', 'centers2d', 'depths','bboxes2d_xyxy','labels2d','sem2d'
         ]:
             if key not in results:
                 continue

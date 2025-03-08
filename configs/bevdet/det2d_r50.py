@@ -74,7 +74,7 @@ data_config = {
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-batch_size=2
+batch_size=1
 bev_embed_dims=256
 # Model
 grid_config = {
@@ -189,7 +189,7 @@ train_pipeline = [
     dict(
         type='Collect3D', keys=['img_inputs', 'gt_bboxes_3d', 'gt_labels_3d',
                                 # 'gt_depth','semantic_indices',
-                                'bboxes2d_xyxy','labels2d','centers2d'],
+                                'bboxes2d_xyxy','labels2d','centers2d','sem2d'],
         meta_keys=('token', 'sample_idx',
        'img_shape', 'scene_name',     # 'labels2d','bboxes2d',
         # 'bboxes2d_xyxy','centers2d','labels2d','bboxdepths2d'
@@ -230,8 +230,8 @@ share_data_config = dict(
     modality=input_modality,
     img_info_prototype='bevdet4d',
     multi_adj_frame_id_cfg=multi_adj_frame_id_cfg,
-    # version="v1.0-mini",
-    version="v1.0-trainval",
+    version="v1.0-mini",
+    # version="v1.0-trainval",
 )
 
 test_data_config = dict(

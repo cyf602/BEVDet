@@ -1139,6 +1139,7 @@ class PrepareImageInputs(object):
         cam_names = self.choose_cams()
         results['cam_names'] = cam_names
         canvas = []
+        sem_2ds=[]#图像分割
         for i,cam_name in enumerate(cam_names):
             cam_data = results['curr']['cams'][cam_name]
             filename = cam_data['data_path']
@@ -1225,12 +1226,13 @@ class PrepareImageInputs(object):
             ego2globals.append(ego2global)
             post_rots.append(post_rot)
             post_trans.append(post_tran)
+            sem_2ds.append(sem_map)
         
         results['bboxes2d_xyxy'] = new_gt_bboxes
         results['centers2d'] = new_centers2d
         results['labels2d'] = new_labels2d
         results['bboxdepths2d'] = new_depths
-        results['sem2d']=sem_map   
+        results['sem2d']=sem_2ds   
         if self.sequential:#T
             for adj_info in results['adjacent']:
                 post_trans.extend(post_trans[:len(cam_names)])
