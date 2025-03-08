@@ -271,6 +271,74 @@ def _fill_trainval_infos(nusc,
         info['location']=nusc.get('log', nusc.get('scene', sample['scene_token'])['log_token'])['location']
         info['scene_name']=scene_name
         
+        #2D processing
+        gt_2dbboxes_cams = {}
+        gt_3dbboxes_cams = {}
+        centers2d_cams = {}
+        gt_2dbboxes_ignore_cams = {}
+        gt_2dlabels_cams = {}
+        depths_cams = {}
+        visibilities = {}
+        for cam_type, cam_info in info['cams'].items():
+            gt_3dbboxes = []
+            gt_2dbboxes = []
+            centers2d = []
+            gt_2dbboxes_ignore = []
+            gt_2dlabels = []
+            depths = []
+            visibility = []
+            (height, width, _) = mmcv.imread(cam_info['data_path']).shape
+            annos_cam = get_2d_boxes(nusc, cam_info['sample_data_token'], visibilities= ['', '1', '2', '3', '4'], mono3d=True)
+            for i, ann in enumerate(annos_cam):
+                if ann is None:
+                    continue
+                if ann.get('ignore', False):
+                    continue
+                x1, y1, w, h = ann['bbox']
+                inter_w = max(0, min(x1 + w, width) - max(x1, 0))
+                inter_h = max(0, min(y1 + h, height) - max(y1, 0))
+                if inter_w * inter_h == 0:
+                    continue
+                if ann['area'] <= 0 or w < 1 or h < 1:
+                    continue
+                if ann['category_name'] not in nus_categories:
+                    continue
+                bbox = [x1, y1, x1 + w, y1 + h]
+                if ann.get('iscrowd', False):
+                    gt_2dbboxes_ignore.append(bbox)
+                else:
+                    gt_2dbboxes.append(bbox)
+                    gt_2dlabels.append(ann['category_id'])
+                    center2d = ann['center2d'][:2]
+                    depth = ann['center2d'][2]
+                    centers2d.append(center2d)
+                    depths.append(depth)
+                    visibility.append(ann['visibility_token'])
+                    # gt_3dbboxes.append(ann['bbox_cam3d'])
+            gt_2dbboxes = np.array(gt_2dbboxes, dtype=np.float32)
+            gt_3dbboxes_cam = np.array(gt_3dbboxes, dtype=np.float32)
+            gt_2dlabels = np.array(gt_2dlabels, dtype=np.int64)
+            centers2d = np.array(centers2d, dtype=np.float32)
+            depths = np.array(depths, dtype=np.float32)
+            gt_2dbboxes_ignore = np.array(gt_2dbboxes_ignore, dtype=np.float32)
+            gt_2dbboxes_cams[cam_type]=gt_2dbboxes
+            gt_2dlabels_cams[cam_type]=gt_2dlabels
+            centers2d_cams[cam_type]=centers2d
+            gt_3dbboxes_cams[cam_type]=gt_3dbboxes_cam
+            depths_cams[cam_type]=depths
+            gt_2dbboxes_ignore_cams[cam_type]=gt_2dbboxes_ignore
+            visibilities[cam_type]=visibility
+            info.update( 
+                dict(
+                    bboxes2d_xyxy=gt_2dbboxes_cams,
+                    # bboxes3d_cams=gt_3dbboxes_cams,
+                    labels2d=gt_2dlabels_cams,
+                    centers2d=centers2d_cams,
+                    bboxdepths2d=depths_cams,
+                    bboxes_ignore=gt_2dbboxes_ignore_cams,
+                    visibilities = visibilities,)
+            )
+
         if sample['scene_token'] in train_scenes:
             train_nusc_infos.append(info)
         else:
@@ -630,5 +698,6 @@ def generate_record(ann_rec: dict, x1: float, y1: float, x2: float, y2: float,
     coco_rec['category_id'] = nus_categories.index(cat_name)
     coco_rec['bbox'] = [x1, y1, x2 - x1, y2 - y1]
     coco_rec['iscrowd'] = 0
+    coco_rec['visibility_token'] = repro_rec['visibility_token']
 
     return coco_rec

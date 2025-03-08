@@ -1164,10 +1164,10 @@ class PrepareImageInputs(object):
                                    rotate=rotate)
 
             if self.with_2d:
-                gt_bboxes = results['bboxes2d_xyxy'][i]
-                centers2d = results['centers2d'][i]
-                labels2d = results['labels2d'][i]
-                depths = results['bboxdepths2d'][i]
+                gt_bboxes = results['bboxes2d_xyxy'][cam_name]
+                centers2d = results['centers2d'][cam_name]
+                labels2d = results['labels2d'][cam_name]
+                depths = results['bboxdepths2d'][cam_name]
                 if len(gt_bboxes) != 0:
                     gt_bboxes, centers2d, labels2d, depths = self._bboxes_transform(
                         gt_bboxes, 

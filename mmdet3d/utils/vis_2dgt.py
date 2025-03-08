@@ -4,10 +4,12 @@ from tqdm import tqdm
 import shutil
 import glob
 import numpy as np
+from datetime import datetime
+time_str=datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
 #用于验证2Dgt的正确性
 json_path='data/nuscenes/nuscenes_infos_val.coco.json'
 img_root='data/nuscenes/'
-save_root="test/vis_2d_labels_in_model/"
+save_root="test/vis_2d_labels_in_model/"+time_str+'/'
 label_root='data/nuscenes/nusc_2d_yolo'
 vis_id=0
 os.makedirs(save_root,exist_ok=True)

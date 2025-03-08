@@ -378,11 +378,11 @@ class YOLOXHeadCustom(BaseDenseHead, BBoxTestMixin):
                 flatten_bbox_preds.view(-1, 4)[pos_masks],
                 l1_targets) / num_total_samples
             loss_dict.update(enc_loss_bbox=loss_l1)
-        if self.vis_idx%100==10:
+        if self.vis_idx%100!=10:
             flatten_cls_pr=torch.argmax(flatten_cls_preds,dim=-1)#[N*bs,704,10]->[N*bs,704]
             for i,img in enumerate(img_metas[0]['canvas']):
                 vis_single_det_and_seg(img.copy(),gt_bboxes2d_list[0][i].cpu().numpy(),gt_labels2d_list[0][i].cpu().numpy(),idx=str(self.vis_idx)+'_'+str(i))
-                vis_single_det_and_seg(img.copy(),flatten_bboxes[i][pos_masks[i]].detach().cpu().numpy(),flatten_cls_pr[i][pos_masks[i]].cpu().numpy(),idx=str(self.vis_idx)+'_pr'+str(i))
+                vis_single_det_and_seg(img.copy(),flatten_bboxes[i][pos_masks_list[i]].detach().cpu().numpy(),flatten_cls_pr[i][pos_masks_list[i]].cpu().numpy(),idx=str(self.vis_idx)+'_pr'+str(i))
         self.vis_idx+=1#len(img_metas)#bs
         return loss_dict
 
