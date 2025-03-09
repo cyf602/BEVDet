@@ -50,6 +50,7 @@ class Det2D(MVXTwoStageDetector):
             self.depthvis_root=self.det2t_head.save_vis2d_root+'depth/'
             os.mkdir(self.depthvis_root)
             self.maxd=self.grid_config['depth'][1]#最大深度距离(m)
+            self.mind=self.grid_config['depth'][0]#最小深度距离(m)
             self.visdepth_idx=0
 
     def forward_train(self,img_inputs,img_metas=None,**kwargs):
@@ -86,12 +87,16 @@ class Det2D(MVXTwoStageDetector):
         # vis_img_and_labels(img_inputs[0][0,::3].cpu().numpy().astype(np.uint8),gt_bboxes[0],gt_labels[0])
         losses2d = self.det2t_head.loss(*loss2d_inputs)
         if self.depth:
-            loss_depth=self.get_depth_loss(gt_depth, depth)#[6,118,16,44]
+            depth_labels = self.get_downsampled_gt_depth(gt_depth)
+            fg_mask = torch.max(depth_labels, dim=1).values > 0.0
+            loss_depth=self.get_depth_loss(depth_labels, depth,fg_mask)#[6,118,16,44]
             losses2d.update(dict(loss_depth=loss_depth))
-            if depth.device==torch.device("cuda:0"):
+            if depth.device==torch.device("cuda:0") and self.visdepth_idx%200==10:
                 pr_depth=torch.argmax(depth,dim=1)
                 pr_depth=pr_depth.view(B,N,*pr_depth.shape[1:])[0]
-                self.visdepth(gt_depth[0].cpu().numpy(),pr_depth.cpu().numpy())
+                depth_labels=depth_labels.view(B,N,*pr_depth.shape[1:],self.D)
+                depth_labels=torch.argmax(depth_labels,dim=-1).cpu().numpy()[0]
+                self.visdepth(gt_depth[0].cpu().numpy(),pr_depth.cpu().numpy(),depth_labels,fg_mask.view(B,N,*pr_depth.shape[1:]).cpu().numpy()[0])
         return losses2d
     
     def get_downsampled_gt_depth(self, gt_depths):
@@ -104,8 +109,8 @@ class Det2D(MVXTwoStageDetector):
         B, N, H, W = gt_depths.shape
         gt_depths = gt_depths.view(B * N, H // self.downsample,
                                    self.downsample, W // self.downsample,
-                                   self.downsample, 1)
-        gt_depths = gt_depths.permute(0, 1, 3, 5, 2, 4).contiguous()
+                                   self.downsample, 1)#[BN,h,dsh,w,dsw,1]
+        gt_depths = gt_depths.permute(0, 1, 3, 5, 2, 4).contiguous()#[BN,h,w,1,dsh,dsw]
         gt_depths = gt_depths.view(-1, self.downsample * self.downsample)
         gt_depths_tmp = torch.where(gt_depths == 0.0,
                                     1e5 * torch.ones_like(gt_depths),
@@ -126,22 +131,20 @@ class Det2D(MVXTwoStageDetector):
                 self.grid_config['depth'][0])
             gt_depths = gt_depths + 1.
         gt_depths = torch.where((gt_depths < self.D + 1) & (gt_depths >= 0.0),
-                                gt_depths, torch.zeros_like(gt_depths))
+                                gt_depths, torch.zeros_like(gt_depths))#torch.where(condition, x, y) True选取x
         gt_depths = F.one_hot(
             gt_depths.long(), num_classes=self.D + 1).view(-1, self.D + 1)[:,
-                                                                           1:]
+                                                                           1:]#[N,h,w,D]
         return gt_depths.float()
 
     @force_fp32()
-    def get_depth_loss(self, depth_labels, depth_preds):
+    def get_depth_loss(self, depth_labels, depth_preds,fg_mask=None):
         """
         depth_labels: [B,N,256,704]
         depth_preds: [N,118/self.D,16,44]
         """
-        depth_labels = self.get_downsampled_gt_depth(depth_labels)
         depth_preds = depth_preds.permute(0, 2, 3,
                                           1).contiguous().view(-1, self.D)
-        fg_mask = torch.max(depth_labels, dim=1).values > 0.0
         depth_labels = depth_labels[fg_mask]
         depth_preds = depth_preds[fg_mask]
         with autocast(enabled=False):
@@ -231,13 +234,20 @@ class Det2D(MVXTwoStageDetector):
         mlp_input = torch.cat([mlp_input, sensor2ego], dim=-1)#[B,6,27]
         return mlp_input
     
-    def visdepth(self,depthgt,depthpr):
+    def visdepth(self,depthgt,depthpr,downsp_gt,mask=None):
         """gt max=60m pr max=118格"""
         N,H,W=depthgt.shape
+        depthpr[~mask]=self.D#未监督置于白色大深度值
+        downsp_gt[~mask]=self.D
+        ori_mask=depthgt > self.mind
+        depthgt[~ori_mask]=self.maxd
         for i in range(N):
-            primg=np.resize(depthpr[i],(H,W))/self.D*255
+            primg=depthpr[i]/self.D*255
+            primg=cv2.resize(primg,(W,H))
             gtimg=depthgt[i]/self.maxd*255
-            depthimg=np.concatenate((gtimg,primg),axis=-1).astype(np.uint8)
+            dsp_gtimg=downsp_gt[i]/self.D*255
+            dsp_gtimg=cv2.resize(dsp_gtimg,(W,H))
+            depthimg=np.concatenate((gtimg,primg,dsp_gtimg),axis=-1).astype(np.uint8)
             if not cv2.imwrite(self.depthvis_root+f'depth_{self.visdepth_idx}_{i}.png',depthimg):
                 print('vis depth falied:',self.depthvis_root+f'depth_{self.visdepth_idx}_{i}.png')
         self.visdepth_idx+=1
