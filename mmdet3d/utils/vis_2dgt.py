@@ -58,7 +58,7 @@ def vis_img_and_labels(imgs,bboxes,labels=None):
         print('save 2d img and labels:',save_root+str(vis_id)+str(cam)+'.jpg')
     vis_id+=1
     
-def vis_single_det_and_seg(img,bboxes=None,labels=None,seg=None,cam="un",idx=None):
+def vis_single_det_and_seg(img,bboxes=None,labels=None,seg=None,cam="un",idx=None,save_loc="test/vis_2d_labels_in_model/"):
     """为一张图可视化检测框和分割
     
     """
@@ -74,8 +74,8 @@ def vis_single_det_and_seg(img,bboxes=None,labels=None,seg=None,cam="un",idx=Non
             cls_name=nus_categories[catid]
             cv2.putText(img,cls_name,bbox[:2],fontFace=2,fontScale=1.,color=color)
             cv2.rectangle(img,bbox[:2],bbox[2:],color,2)
-        if not cv2.imwrite(save_root+str(idx)+str(cam)+'.jpg',img):
-            print("vis:"+save_root+str(idx)+str(cam)+'.jpg failed!!!')
+        if not cv2.imwrite(save_loc+str(idx)+str(cam)+'.png',img):
+            print("vis:"+save_loc+str(idx)+str(cam)+'.png failed!!!')
     if seg:
         # seg=seg.transpose(1,0)#to 704 256
         W,H=seg.shape
@@ -83,8 +83,8 @@ def vis_single_det_and_seg(img,bboxes=None,labels=None,seg=None,cam="un",idx=Non
         for typeid in range(10):
             color=colormap[typeid]
             seg_pic[seg==typeid]=color
-        if not cv2.imwrite(save_root+str(idx)+str(cam)+'seg.jpg',seg_pic):
-            print("vis:"+save_root+str(idx)+str(cam)+'seg.jpg failed!!!')
+        if not cv2.imwrite(save_loc+str(idx)+str(cam)+'seg.png',seg_pic):
+            print("vis:"+save_loc+str(idx)+str(cam)+'seg.png failed!!!')
             
         
     vis_id+=1

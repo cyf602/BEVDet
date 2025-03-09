@@ -537,7 +537,7 @@ def get_2d_boxes(nusc,
 
         # Filter out the corners that are not in front of the calibrated
         # sensor.
-        corners_3d = box.corners()
+        corners_3d = box.corners()#[3,8]
         in_front = np.argwhere(corners_3d[2, :] > 0).flatten()
         corners_3d = corners_3d[:, in_front]
 
