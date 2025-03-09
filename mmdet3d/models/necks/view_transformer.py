@@ -9,7 +9,7 @@ from torch.utils.checkpoint import checkpoint
 
 from mmdet3d.ops.bev_pool_v2.bev_pool import bev_pool_v2
 from mmdet.models.backbones.resnet import BasicBlock
-from ..builder import NECKS
+from ..builder import NECKS,HEADS
 
 from torch.utils.checkpoint import checkpoint
 from mmcv.cnn.bricks.conv_module import ConvModule
@@ -509,7 +509,7 @@ class SELayer(nn.Module):
         x_se = self.conv_expand(x_se)
         return x * self.gate(x_se)#考虑到mlp input的信息
 
-
+@HEADS.register_module()
 class DepthNet(nn.Module):
 
     def __init__(self,
@@ -521,6 +521,7 @@ class DepthNet(nn.Module):
                  use_aspp=True,
                  with_cp=False,
                  stereo=False,
+                 use_context=True,#False则只有depth
                  bias=0.0,
                  aspp_mid_channels=-1):
         super(DepthNet, self).__init__()
@@ -530,13 +531,15 @@ class DepthNet(nn.Module):
             nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True),
         )
-        self.context_conv = nn.Conv2d(
-            mid_channels, context_channels, kernel_size=1, stride=1, padding=0)
+        if use_context:
+            self.context_conv = nn.Conv2d(
+                mid_channels, context_channels, kernel_size=1, stride=1, padding=0)
+            self.context_mlp = Mlp(27, mid_channels, mid_channels)
+            self.context_se = SELayer(mid_channels)  # NOTE: add camera-aware
         self.bn = nn.BatchNorm1d(27)
         self.depth_mlp = Mlp(27, mid_channels, mid_channels)
         self.depth_se = SELayer(mid_channels)  # NOTE: add camera-aware
-        self.context_mlp = Mlp(27, mid_channels, mid_channels)
-        self.context_se = SELayer(mid_channels)  # NOTE: add camera-aware
+        
         depth_conv_input_channels = mid_channels
         downsample = None
 
@@ -582,6 +585,7 @@ class DepthNet(nn.Module):
         self.depth_conv = nn.Sequential(*depth_conv_list)
         self.with_cp = with_cp
         self.depth_channels = depth_channels
+        self.use_context=use_context
 
     def gen_grid(self, metas, B, N, D, H, W, hi, wi):
         frustum = metas['frustum']
@@ -646,9 +650,10 @@ class DepthNet(nn.Module):
     def forward(self, x, mlp_input, stereo_metas=None):
         mlp_input = self.bn(mlp_input.reshape(-1, mlp_input.shape[-1]))
         x = self.reduce_conv(x)#[6,512,16,44]
-        context_se = self.context_mlp(mlp_input)[..., None, None]#[6,27->512,1,1]
-        context = self.context_se(x, context_se)
-        context = self.context_conv(context)
+        if self.use_context:
+            context_se = self.context_mlp(mlp_input)[..., None, None]#[6,27->512,1,1]
+            context = self.context_se(x, context_se)
+            context = self.context_conv(context)
         depth_se = self.depth_mlp(mlp_input)[..., None, None]
         depth = self.depth_se(x, depth_se)
 
@@ -670,7 +675,10 @@ class DepthNet(nn.Module):
             depth = checkpoint(self.depth_conv, depth)
         else:
             depth = self.depth_conv(depth)
-        return torch.cat([depth, context], dim=1)
+        if self.use_context:
+            return torch.cat([depth, context], dim=1)
+        else:
+            return depth
 
 
 class DepthAggregation(nn.Module):
@@ -830,13 +838,13 @@ class LSSViewTransformerBEVDepth(LSSViewTransformer):
 
     def forward(self, input, stereo_metas=None):
         (x, rots, trans, intrins, post_rots, post_trans, bda,
-         mlp_input) = input[:8]
+         mlp_input) = input[:8]#mlp_input[bs,N6,27]
 
-        B, N, C, H, W = x.shape
+        B, N, C, H, W = x.shape#B,6,512,16,44 R50 2,3
         x = x.view(B * N, C, H, W)
         x = self.depth_net(x, mlp_input, stereo_metas)#[6,110+80,16,44]
-        depth_digit = x[:, :self.D, ...]
-        tran_feat = x[:, self.D:self.D + self.out_channels, ...]
+        depth_digit = x[:, :self.D, ...]#[B,118]
+        tran_feat = x[:, self.D:self.D + self.out_channels, ...]#[B,80,...]
         depth = depth_digit.softmax(dim=1)#深度概率
         bev_feat, depth = self.view_transform(input, depth, tran_feat)
         return bev_feat, depth

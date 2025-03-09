@@ -74,7 +74,7 @@ data_config = {
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-batch_size=1
+batch_size=2
 bev_embed_dims=256
 # Model
 grid_config = {
@@ -97,6 +97,8 @@ multi_adj_frame_id_cfg = (1, 0+1, 1)
 
 model = dict(
     type='Det2D',
+    grid_config=grid_config,
+    loss_depth_weight=3.0,
     img_backbone=dict(
         pretrained='torchvision://resnet50',
         type='ResNet',
@@ -125,7 +127,16 @@ model = dict(
         test_cfg=dict(score_thr=0.01, nms=dict(
             type='nms', iou_threshold=0.65)),
     ),
-
+    depth_net=dict(
+        type='DepthNet',
+        in_channels=512,
+        mid_channels=512,#=in_channels
+        context_channels=0,#不参与预训练
+        depth_channels=int((grid_config['depth'][1]-grid_config['depth'][0])/grid_config['depth'][2]),#"self.D"
+        use_context=False,
+        use_dcn=False, 
+        aspp_mid_channels=96,
+    ),
     # model training and testing settings
     train_cfg=dict(
         pts=dict(
@@ -182,13 +193,25 @@ train_pipeline = [
         with_2d=True,
         data_aug_conf=data_config),
     dict(type='LoadAnnotations'),
-
+    dict(
+        type='BEVAugv2',
+        bev_h=400,#bev 分割
+        bev_w=200,
+        bda_aug_conf=bda_aug_conf,
+        classes=class_names),
+    dict(
+        type='LoadPointsFromFile',
+        coord_type='LIDAR',
+        load_dim=5,
+        use_dim=5,
+        file_client_args=file_client_args),
+    dict(type='PointToMultiViewDepth', downsample=1, grid_config=grid_config),
     # dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
     # dict(type='ObjectNameFilter', classes=class_names),
     dict(type='DefaultFormatBundle3D', class_names=class_names),
     dict(
         type='Collect3D', keys=['img_inputs', 'gt_bboxes_3d', 'gt_labels_3d',
-                                # 'gt_depth','semantic_indices',
+                                'gt_depth',#'semantic_indices',
                                 'bboxes2d_xyxy','labels2d','centers2d','sem2d'],
         meta_keys=('token', 'sample_idx',
        'img_shape', 'scene_name',     # 'labels2d','bboxes2d',

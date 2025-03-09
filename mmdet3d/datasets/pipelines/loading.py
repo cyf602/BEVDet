@@ -1132,6 +1132,7 @@ class PrepareImageInputs(object):
         intrins = []
         post_rots = []
         post_trans = []
+        #2D
         new_gt_bboxes = []
         new_centers2d = []
         new_labels2d = []
@@ -1188,6 +1189,7 @@ class PrepareImageInputs(object):
                 new_centers2d.append(centers2d.reshape(-1,2))
                 new_labels2d.append(labels2d)
                 new_depths.append(depths)
+                sem_2ds.append(sem_map)
             # vis_single_det_and_seg(img,gt_bboxes,labels2d,sem_map)#
             # for convenience, make augmentation matrices 3x3
             post_tran = torch.zeros(3)
@@ -1226,7 +1228,6 @@ class PrepareImageInputs(object):
             ego2globals.append(ego2global)
             post_rots.append(post_rot)
             post_trans.append(post_tran)
-            sem_2ds.append(sem_map)
         
         results['bboxes2d_xyxy'] = new_gt_bboxes
         results['centers2d'] = new_centers2d

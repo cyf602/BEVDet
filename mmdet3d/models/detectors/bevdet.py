@@ -447,7 +447,7 @@ class BEVDet4D(BEVDet):
             curr2adjsensor.extend([None for _ in range(self.extra_ref_frames)])
             assert len(curr2adjsensor) == self.num_frame
 
-        extra = [
+        extra = [#后4个只有shape变化，sensor2keyego转为ego坐标系下坐标
             sensor2keyegos,
             ego2globals,
             intrins.view(B, self.num_frame, N, 3, 3),
@@ -469,12 +469,12 @@ class BEVDet4D(BEVDet):
         if sequential:
             return self.extract_img_feat_sequential(img, kwargs['feat_prev'])
         imgs, sensor2keyegos, ego2globals, intrins, post_rots, post_trans, \
-        bda, _ = self.prepare_inputs(img)
+        bda, _ = self.prepare_inputs(img)#除bda都是list，len为时序帧数
         """Extract features of images."""
         bev_feat_list = []
         depth_list = []
         key_frame = True  # back propagation for key frame only
-        for img, sensor2keyego, ego2global, intrin, post_rot, post_tran in zip(
+        for img, sensor2keyego, ego2global, intrin, post_rot, post_tran in zip(#时序遍历
                 imgs, sensor2keyegos, ego2globals, intrins, post_rots, post_trans):
             if key_frame or self.with_prev:
                 if self.align_after_view_transfromation:
