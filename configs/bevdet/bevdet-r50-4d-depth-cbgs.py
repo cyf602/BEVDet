@@ -279,7 +279,7 @@ test_data_config = dict(
     ann_file=data_root + 'bevdetv3-nuscenes_infos_val.pkl')
 
 data = dict(
-    samples_per_gpu=4,
+    samples_per_gpu=1,
     workers_per_gpu=4,
     train=dict(
         type='CBGSDataset',
@@ -336,3 +336,4 @@ custom_hooks = [
 ]
 
 # fp16 = dict(loss_scale='dynamic')
+load_from="ckpts/det2d_depth_b16_310ep5_fitted.pth"

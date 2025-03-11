@@ -74,7 +74,7 @@ data_config = {
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-batch_size=8
+batch_size=1
 bev_embed_dims=256
 # Model
 grid_config = {
@@ -182,6 +182,17 @@ model = dict(
                 use_sigmoid=False,
                 loss_weight=3.0,
                 class_weight=[0.3, 2.0, 2.0, 2.0]),),
+        # objseg_decoder=dict(
+        #     type='SegEncode',
+        #     inC=256,
+        #     outC=len(class_names),
+        #     loss_seg=dict(#
+        #         type='CrossEntropyLoss',
+        #         use_sigmoid=False,
+        #         loss_weight=3.0,
+        #         # class_weight=[0.3, 2.0, 2.0, 2.0]
+        #     ),
+        # ),    
         tasks=[
             dict(num_class=10, class_names=['car', 'truck',
                                             'construction_vehicle',
@@ -431,3 +442,4 @@ find_unused_parameters=False
 # fp16 = dict(loss_scale='dynamic')
 # resume_from="work_dirs/bevdepth-segonly160-1015/epoch_5.pth"
 # load_from="ckpts/bevdepthmul-ex4b-ep8.pth"
+load_from="ckpts/det2d_depth_b16_310ep5_fitted.pth"
