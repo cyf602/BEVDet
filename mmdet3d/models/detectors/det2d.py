@@ -51,7 +51,7 @@ class Det2D(MVXTwoStageDetector):
             os.mkdir(self.depthvis_root)
             self.maxd=self.grid_config['depth'][1]#最大深度距离(m)
             self.mind=self.grid_config['depth'][0]#最小深度距离(m)
-            self.visdepth_idx=0
+        self.visdepth_idx=0
 
     def forward_train(self,img_inputs,img_metas=None,**kwargs):
         imgs, sensor2keyegos, ego2globals, intrins, post_rots, post_trans, \
@@ -97,6 +97,7 @@ class Det2D(MVXTwoStageDetector):
                 depth_labels=depth_labels.view(B,N,*pr_depth.shape[1:],self.D)
                 depth_labels=torch.argmax(depth_labels,dim=-1).cpu().numpy()[0]
                 self.visdepth(gt_depth[0].cpu().numpy(),pr_depth.cpu().numpy(),depth_labels,fg_mask.view(B,N,*pr_depth.shape[1:]).cpu().numpy()[0])
+            self.visdepth_idx+=1
         return losses2d
     
     def get_downsampled_gt_depth(self, gt_depths):
@@ -250,4 +251,3 @@ class Det2D(MVXTwoStageDetector):
             depthimg=np.concatenate((gtimg,primg,dsp_gtimg),axis=-1).astype(np.uint8)
             if not cv2.imwrite(self.depthvis_root+f'depth_{self.visdepth_idx}_{i}.png',depthimg):
                 print('vis depth falied:',self.depthvis_root+f'depth_{self.visdepth_idx}_{i}.png')
-        self.visdepth_idx+=1

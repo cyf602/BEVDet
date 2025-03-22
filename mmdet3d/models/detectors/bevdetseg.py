@@ -264,7 +264,7 @@ class BEVDepth4D_Multitask(BEVDepth4D):
             outs_2d=self.det2d_head(**self.img_features)
             loss2d_inputs = [gt_bboxes, gt_labels,
                                  centers2d, outs_2d,img_metas]
-            vis_img_and_labels(img_inputs[0][0,::3].cpu().numpy().astype(np.uint8),gt_bboxes[0],gt_labels[0])
+            # vis_img_and_labels(img_inputs[0][0,::3].cpu().numpy().astype(np.uint8),gt_bboxes[0],gt_labels[0])
             losses2d = self.det2d_head.loss(*loss2d_inputs)
             losses.update(losses2d)            
         # if self.pred_seg:
