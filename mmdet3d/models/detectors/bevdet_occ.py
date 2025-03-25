@@ -1,5 +1,5 @@
 # Copyright (c) Phigent Robotics. All rights reserved.
-from tools.utils.vis_bev import vis_bev_view,vis_mask3d
+from tools.utils.vis_bev import save_occ_bin, vis_bev_view,vis_mask3d
 from .bevdet import BEVStereo4D,BEVDepth4D
 # from mmcv.runner import force_fp32
 import torch
@@ -184,7 +184,7 @@ class BEVStereo4DOCC(BEVStereo4D):
             if mask_camera is not None:
                 final_mask=torch.logical_and(final_mask,mask_camera)
             if self.use_flow2d:
-                final_mask=torch.sum(final_mask,dim=-1)
+                final_mask=torch.sum(final_mask,dim=-1)#??????
             final_mask=final_mask.view(-1)
             loss_['loss_flow']=self.loss_flow(preds_flow[final_mask], voxel_flow[final_mask],avg_factor=torch.sum(final_mask))
             #监督visible mask,nonfree
@@ -282,6 +282,8 @@ class BEVStereo4DOCC(BEVStereo4D):
                 flow_pred[occ_sta]=0
         else:
             flow_pred=np.zeros((W,H,Z,2),dtype=np.float16)
+        # save_occ_bin(occ_res.copy(),flow_pred,idx=self.vis_idx)
+        self.vis_idx+=1
         return [{'occ_results':occ_res,'flow_results':flow_pred}]
 
     def forward_train(self,

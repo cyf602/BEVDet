@@ -150,16 +150,16 @@ model = dict(
     #         out_channels=bev_embed_dims,
     #     )
     # ),
-    det2d_cfg=dict(    
-        type='YOLOXHeadCustom',
-        num_classes=10,
-        in_channels=512,
-        strides=[16],#[8, 16, 32, 64],
-        train_cfg=dict(assigner=dict(
-            type='SimOTAAssigner', center_radius=2.5)),
-        test_cfg=dict(score_thr=0.01, nms=dict(
-            type='nms', iou_threshold=0.65)),
-    ),
+    # det2d_cfg=dict(    
+    #     type='YOLOXHeadCustom',
+    #     num_classes=10,
+    #     in_channels=512,
+    #     strides=[16],#[8, 16, 32, 64],
+    #     train_cfg=dict(assigner=dict(
+    #         type='SimOTAAssigner', center_radius=2.5)),
+    #     test_cfg=dict(score_thr=0.01, nms=dict(
+    #         type='nms', iou_threshold=0.65)),
+    # ),
     pts_bbox_head=dict(
         type='CenterHeadDetSeg',
         grid_config=grid_config,

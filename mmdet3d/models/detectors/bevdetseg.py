@@ -61,7 +61,7 @@ class BEVDepth4D_Multitask(BEVDepth4D):
         imgs = img
         B, N, C, imH, imW = imgs.shape
         imgs = imgs.view(B * N, C, imH, imW)
-        if self.grid_mask is not None:
+        if self.grid_mask is not None:#None
             imgs = self.grid_mask(imgs)
         x = self.img_backbone(imgs)
         stereo_feat = None

@@ -27,6 +27,12 @@ colors_map=np.array([
             [255, 255, 255, 255],  # free             white
         ], dtype=np.uint8)[:, :3]
 V_MAX_THR=-1
+X,Y,Z=200,200,16
+voxel_size=0.4
+indices = np.indices((X, Y, Z))#[3,x,y,z]
+indices=np.transpose(indices,(1,2,3,0))
+indices=indices*voxel_size
+
 def vis_occ(semantics, flows,use_minv_thr=True,v_max_thr=-1):
     H, W, D = semantics.shape
     semantics_valid=(semantics!=16)#0~16类别号
@@ -143,11 +149,6 @@ def vis_mask3d(occ_gt,mask,save_idx=0,pred_occ=None,
                pred_flow=None,save_root='vis/vis3d'):
     if not os.path.exists(save_root):
         os.makedirs(save_root)
-    X,Y,Z=200,200,16
-    voxel_size=0.4
-    indices = np.indices((X, Y, Z))#[3,x,y,z]
-    indices=np.transpose(indices,(1,2,3,0))
-    indices=indices*voxel_size
     outsave=f'{save_idx}_semgt_masknonfree.txt'
     gtnonfree=(occ_gt!=16).cpu().numpy()
     prnonfree=(pred_occ!=16).cpu().numpy()
@@ -214,6 +215,14 @@ def vis_gt_txts(infos,save_root='vis/vis3d/gt'):
     for info in infos:
         npzfile=os.path.join(info['occv2_path'],'labels.npz')
         vis_gt_txt(npzfile,save_root)
+
+def save_occ_bin(occ_res,flow_pr,save_root='vis/vis_occ',idx=0):
+    occ_res+=1
+    nonfree=occ_res<=16
+    flow_norm=np.linalg.norm(flow_pr,axis=-1)
+    occ=np.concatenate([indices,occ_res[...,None],flow_norm[...,None]],axis=-1)
+    occpath=os.path.join(save_root,str(idx)+'.bin')
+    occ[nonfree].tofile(occpath)
 
 if __name__=="__main__":
     pkl_file="data/nuscenes/bevdetv3-nuscenes_infos_train.pkl"

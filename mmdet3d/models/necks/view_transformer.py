@@ -828,7 +828,7 @@ class LSSViewTransformerBEVDepth(LSSViewTransformer):
         fg_mask = torch.max(depth_labels, dim=1).values > 0.0
         depth_labels = depth_labels[fg_mask]
         depth_preds = depth_preds[fg_mask]
-        with autocast(enabled=False):
+        with autocast(enabled=False):#禁用自动混合精度，强制fp32
             depth_loss = F.binary_cross_entropy(
                 depth_preds,
                 depth_labels,#[B*N*h*w, d]

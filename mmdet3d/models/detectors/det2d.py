@@ -25,7 +25,8 @@ import numpy as np
 class Det2D(MVXTwoStageDetector):
     """"""
     def __init__(self,
-                 det2d_cfg,
+                 det2d_cfg=None,
+                 seg2d_cfg=None,
                  grid_config=None,
                  depth_net=None,
                  loss_depth_weight=1.0,
@@ -33,10 +34,13 @@ class Det2D(MVXTwoStageDetector):
                  **kwargs):
         super(Det2D,self).__init__(**kwargs)
 
-        self.det2d=self.depth=False    
+        self.det2d=self.depth=self.seg2d=False    
         if det2d_cfg is not None:
             self.det2d=True
             self.det2t_head = builder.build_head(det2d_cfg)
+        if seg2d_cfg is not None:
+            self.seg2d=True
+            self.seg2d_head=builder.build_head(seg2d_cfg)
         if depth_net is not None:
             self.depthnet=builder.build_head(depth_net)
             self.D=torch.arange(*grid_config['depth'], dtype=torch.float).shape[0]
@@ -46,12 +50,13 @@ class Det2D(MVXTwoStageDetector):
         self.loss_depth_weight=loss_depth_weight
         self.num_frame=1
         self.sid=False
-        if torch.cuda.current_device()==0 and self.depth:
-            self.depthvis_root=self.det2t_head.save_vis2d_root+'depth/'
-            os.mkdir(self.depthvis_root)
-            self.maxd=self.grid_config['depth'][1]#最大深度距离(m)
-            self.mind=self.grid_config['depth'][0]#最小深度距离(m)
         self.visdepth_idx=0
+        if torch.cuda.current_device()==0:
+            if self.depth:
+                self.depthvis_root="vis/vis2d/"+'depth/'
+                os.mkdir(self.depthvis_root)
+                self.maxd=self.grid_config['depth'][1]#最大深度距离(m)
+                self.mind=self.grid_config['depth'][0]#最小深度距离(m)
 
     def forward_train(self,img_inputs,img_metas=None,**kwargs):
         imgs, sensor2keyegos, ego2globals, intrins, post_rots, post_trans, \
@@ -64,17 +69,20 @@ class Det2D(MVXTwoStageDetector):
         img = img.view(B * N, C, imH, imW)
         # if self.grid_mask is not None:#None
         #     imgs = self.grid_mask(imgs)
-        x = self.img_backbone(img)
+        x = self.img_backbone(img)#list
 
         if self.with_img_neck:
-            x = self.img_neck(x)
-            if type(x) in [list, tuple]:
-                xshape=x[0].shape
-                x=[f.view(B, N, *xshape[1:]) for f in x]
+            x = self.img_neck(x)#list [B*N,C,h,w]
+        if self.seg2d:
+            outseg_2d=self.seg2d_head(x[0])# [B*N,nc,256,704]
+        if type(x) in [list, tuple]:
+            xshape=x[0].shape
+            x=[f.view(B, N, *xshape[1:]) for f in x]
         # _, output_dim, ouput_H, output_W = x[0].shape
         # x = x.view(B, N, output_dim, ouput_H, output_W)
         feats={'img_feats':x}
-        outs_2d=self.det2t_head(**feats)
+        if self.det2d:
+            outs_2d=self.det2t_head(**feats)
         # x=x[0].flatten(0,1)
         depth=self.depthnet(x[0].flatten(0,1),mlp_input)#?应为B * N, C512, H, W
         depth=depth.softmax(dim=1)#C应为depthnet depth_channels
@@ -82,10 +90,17 @@ class Det2D(MVXTwoStageDetector):
         gt_labels=kwargs['labels2d']
         centers2d=kwargs['centers2d']
         gt_depth = kwargs['gt_depth']
-        loss2d_inputs = [gt_bboxes, gt_labels,
-                                centers2d, outs_2d,img_metas]
-        # vis_img_and_labels(img_inputs[0][0,::3].cpu().numpy().astype(np.uint8),gt_bboxes[0],gt_labels[0])
-        losses2d = self.det2t_head.loss(*loss2d_inputs)
+        losses2d={}
+        if self.det2d:
+            loss2d_inputs = [gt_bboxes, gt_labels,
+                                    centers2d, outs_2d,img_metas]
+            # vis_img_and_labels(img_inputs[0][0,::3].cpu().numpy().astype(np.uint8),gt_bboxes[0],gt_labels[0])
+            lossdet = self.det2t_head.loss(*loss2d_inputs)
+            losses2d.update(lossdet)
+        if self.seg2d:
+            gt_seg2d = kwargs['sem2d']
+            lossseg=self.seg2d_head.loss(outseg_2d,gt_seg2d,img_metas[0]['canvas'])
+            losses2d.update(lossseg)
         if self.depth:
             depth_labels = self.get_downsampled_gt_depth(gt_depth)
             fg_mask = torch.max(depth_labels, dim=1).values > 0.0
@@ -251,3 +266,8 @@ class Det2D(MVXTwoStageDetector):
             depthimg=np.concatenate((gtimg,primg,dsp_gtimg),axis=-1).astype(np.uint8)
             if not cv2.imwrite(self.depthvis_root+f'depth_{self.visdepth_idx}_{i}.png',depthimg):
                 print('vis depth falied:',self.depthvis_root+f'depth_{self.visdepth_idx}_{i}.png')
+        self.visdepth_idx+=1
+
+class Seg2D(Det2D):
+    def __init__(self, det2d_cfg, grid_config=None, depth_net=None, loss_depth_weight=1, downsample=16, **kwargs):
+        super().__init__(det2d_cfg, grid_config, depth_net, loss_depth_weight, downsample, **kwargs)

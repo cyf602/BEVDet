@@ -76,7 +76,7 @@ def vis_single_det_and_seg(img,bboxes=None,labels=None,seg=None,cam="un",idx=Non
             cv2.rectangle(img,bbox[:2],bbox[2:],color,2)
         if not cv2.imwrite(save_loc+str(idx)+str(cam)+'.png',img):
             print("vis:"+save_loc+str(idx)+str(cam)+'.png failed!!!')
-    if seg:
+    if seg is not None:
         # seg=seg.transpose(1,0)#to 704 256
         W,H=seg.shape
         seg_pic=np.ones((W,H,3),dtype=np.uint8)*255

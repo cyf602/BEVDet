@@ -20,10 +20,12 @@ from .transfusion_head import TransFusionHead
 from .vote_head import VoteHead
 from .seg_head import SegEncode
 from .yolox_head import YOLOXHeadCustom
+from .fcn_seg_head import FCN32s
 __all__ = [
     'Anchor3DHead', 'FreeAnchor3DHead', 'PartA2RPNHead', 'VoteHead',
     'SSD3DHead', 'BaseConvBboxHead', 'CenterHead', 'ShapeAwareHead',
     'BaseMono3DDenseHead', 'AnchorFreeMono3DHead', 'FCOSMono3DHead',
     'GroupFree3DHead', 'PointRPNHead', 'SMOKEMono3DHead', 'PGDHead',
-    'MonoFlexHead', 'FCAF3DHead','SegEncode','CenterHeadDetSeg','YOLOXHeadCustom'
+    'MonoFlexHead', 'FCAF3DHead','SegEncode','CenterHeadDetSeg','YOLOXHeadCustom',
+    'FCN32s'
 ]

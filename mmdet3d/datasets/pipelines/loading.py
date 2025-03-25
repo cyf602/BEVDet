@@ -935,6 +935,7 @@ class PrepareImageInputs(object):
         sequential=False,
         opencv_pp=False,
         with_2d=False,#若有2dbox，要同步处理
+        seg2d_root=None,
         data_aug_conf=None
     ):
         self.is_train = is_train
@@ -946,7 +947,15 @@ class PrepareImageInputs(object):
         self.filter_invisible=True#遮挡筛选
         self.min_size = 25.0#太小的bbox2d不要
         self.data_aug_conf = data_aug_conf
-        
+        self.class_map_forocc={#由3Dbox类别映射为occv2 前景类
+            0:0,1:1,2:4,3:3,4:2,5:9,6:6,7:5,8:7,9:8,-1:16
+        }
+        self.class_map_det2occ=np.vectorize(self.class_map_forocc.get)
+        self.with_seg2d=False
+        if seg2d_root is not None:
+            self.seg2d_root=seg2d_root
+            self.with_seg2d=True
+
     def get_rot(self, h):
         return torch.Tensor([
             [np.cos(h), np.sin(h)],
@@ -954,11 +963,12 @@ class PrepareImageInputs(object):
         ])
 
     def img_transform(self, img, post_rot, post_tran, resize, resize_dims,
-                      crop, flip, rotate):
+                      crop, flip, rotate,segmask2d=None):
         # adjust image
         if not self.opencv_pp:
             img = self.img_transform_core(img, resize_dims, crop, flip, rotate)
-
+            if segmask2d is not None:
+                segmask2d = self.img_transform_core(segmask2d, resize_dims, crop, flip, rotate,resample=Image.NEAREST)
         # post-homography transformation
         post_rot *= resize
         post_tran -= torch.Tensor(crop[:2])
@@ -974,7 +984,9 @@ class PrepareImageInputs(object):
         post_tran = A.matmul(post_tran) + b
         if self.opencv_pp:
             img = self.img_transform_core_opencv(img, post_rot, post_tran, crop)
-        return img, post_rot, post_tran
+            if segmask2d is not None:
+                segmask2d = self.img_transform_core(segmask2d, resize_dims, crop, flip, rotate,resample=Image.NEAREST)
+        return img, post_rot, post_tran,segmask2d
 
     def img_transform_core_opencv(self, img, post_rot, post_tran,
                                   crop):
@@ -987,13 +999,13 @@ class PrepareImageInputs(object):
                              flags=cv2.INTER_LINEAR)
         return img
 
-    def img_transform_core(self, img, resize_dims, crop, flip, rotate):
+    def img_transform_core(self, img, resize_dims, crop, flip, rotate,resample=Image.BICUBIC):
         # adjust image
-        img = img.resize(resize_dims)
+        img = img.resize(resize_dims,resample=resample)
         img = img.crop(crop)
         if flip:
             img = img.transpose(method=Image.FLIP_LEFT_RIGHT)
-        img = img.rotate(rotate)
+        img = img.rotate(rotate,resample=resample)
         return img
 
     def choose_cams(self):
@@ -1145,6 +1157,9 @@ class PrepareImageInputs(object):
             cam_data = results['curr']['cams'][cam_name]
             filename = cam_data['data_path']
             img = Image.open(filename)#img.mode='RGB'
+            if self.with_seg2d:
+                segmask_path=self.seg2d_root+filename.split('/')[-1][:-4]+"_seg2d.png"
+                seg2dmask= Image.open(segmask_path)
             post_rot = torch.eye(2)
             post_tran = torch.zeros(2)
 
@@ -1156,15 +1171,18 @@ class PrepareImageInputs(object):
             img_augs = self.sample_augmentation(
                 H=img.height, W=img.width, flip=flip, scale=scale)
             resize, resize_dims, crop, flip, rotate = img_augs
-            img, post_rot2, post_tran2 = \
+            img, post_rot2, post_tran2,seg2d = \
                 self.img_transform(img, post_rot,#PIL Image
                                    post_tran,
                                    resize=resize,
                                    resize_dims=resize_dims,
                                    crop=crop,
                                    flip=flip,
-                                   rotate=rotate)
-
+                                   rotate=rotate,
+                                   segmask2d=seg2dmask)
+            if self.with_seg2d:
+                seg2d_gt=np.array(seg2d)#0~16
+                sem_2ds.append(seg2d_gt)
             if self.with_2d:
                 gt_bboxes = results['bboxes2d_xyxy'][cam_name]
                 centers2d = results['centers2d'][cam_name]
@@ -1181,16 +1199,17 @@ class PrepareImageInputs(object):
                         flip=flip,
                     )
                 fH, fW = self.data_aug_conf["input_size"]
-                sem_map=np.ones((fH,fW))*(-1)
-                if len(gt_bboxes) != 0 and self.filter_invisible:
-                    gt_bboxes, centers2d, labels2d, depths,sem_map =  self._filter_invisible(gt_bboxes, centers2d, labels2d, depths)
-
+                # seg2d_gt=np.array(seg2d)#背景类 0~16 默认0 10～15
+                # if len(gt_bboxes) != 0 and self.filter_invisible:#此处semmap是检测框投影
+                #     gt_bboxes, centers2d, labels2d, depths,seg2d_front =  self._filter_invisible(gt_bboxes, centers2d, labels2d, depths)
+                #     seg2d_front=self.class_map_det2occ(seg2d_front)
+                #     seg2d_gt[seg2d_front<10]=seg2d_front[seg2d_front<10]
                 new_gt_bboxes.append(gt_bboxes.reshape(-1,4))
                 new_centers2d.append(centers2d.reshape(-1,2))
                 new_labels2d.append(labels2d)
                 new_depths.append(depths)
-                sem_2ds.append(sem_map)
-            # vis_single_det_and_seg(img,gt_bboxes,labels2d,sem_map)#
+                # sem_2ds.append(seg2d_gt)
+            # vis_single_det_and_seg(img,gt_bboxes,labels2d,seg2d_front)#
             # for convenience, make augmentation matrices 3x3
             post_tran = torch.zeros(3)
             post_rot = torch.eye(3)
@@ -1305,7 +1324,7 @@ class PrepareImageInputs(object):
         tmp_bboxes[:, 2:] = np.floor(bboxes[:, 2:])
         tmp_bboxes = tmp_bboxes.astype(np.int64)
         sort_idx = np.argsort(-depths, axis=0, kind='stable')#由远至近012...
-        tmp_bboxes = tmp_bboxes[sort_idx]#box按从近到远？
+        tmp_bboxes = tmp_bboxes[sort_idx]#box按从远->近？
         bboxes = bboxes[sort_idx]
         depths = depths[sort_idx]
         centers2d = centers2d[sort_idx]

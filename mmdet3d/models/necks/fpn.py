@@ -107,7 +107,7 @@ class CustomFPN(BaseModule):
         self.lateral_convs = nn.ModuleList()
         self.fpn_convs = nn.ModuleList()
 
-        for i in range(self.start_level, self.backbone_end_level):
+        for i in range(self.start_level, self.backbone_end_level):#选中的每层输入都有
             l_conv = ConvModule(
                 in_channels[i],
                 out_channels,
@@ -128,7 +128,7 @@ class CustomFPN(BaseModule):
                     norm_cfg=norm_cfg,
                     act_cfg=act_cfg,
                     inplace=False)
-                self.fpn_convs.append(fpn_conv)
+                self.fpn_convs.append(fpn_conv)#
 
         # add extra conv layers (e.g., RetinaNet)
         extra_levels = num_outs - self.backbone_end_level + self.start_level
@@ -148,10 +148,10 @@ class CustomFPN(BaseModule):
                     norm_cfg=norm_cfg,
                     act_cfg=act_cfg,
                     inplace=False)
-                self.fpn_convs.append(extra_fpn_conv)
+                self.fpn_convs.append(extra_fpn_conv)#3x3 conv
 
     @auto_fp16()
-    def forward(self, inputs):
+    def forward(self, inputs):#torch.Size([6, 1024, 16, 44]) torch.Size([6, 2048, 8, 22])
         """Forward function."""
         assert len(inputs) == len(self.in_channels)
 
@@ -159,7 +159,7 @@ class CustomFPN(BaseModule):
         laterals = [
             lateral_conv(inputs[i + self.start_level])
             for i, lateral_conv in enumerate(self.lateral_convs)
-        ]
+        ]#尺寸和输入一致，通道变512（set）
 
         # build top-down path
         used_backbone_levels = len(laterals)
@@ -200,4 +200,4 @@ class CustomFPN(BaseModule):
                         outs.append(self.fpn_convs[i](F.relu(outs[-1])))
                     else:
                         outs.append(self.fpn_convs[i](outs[-1]))
-        return outs
+        return outs#默认:[6,512,16,44]

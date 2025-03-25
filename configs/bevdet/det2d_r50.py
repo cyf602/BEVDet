@@ -55,7 +55,12 @@ class_names = [
     'car', 'truck', 'construction_vehicle', 'bus', 'trailer', 'barrier',
     'motorcycle', 'bicycle', 'pedestrian', 'traffic_cone'
 ]
-
+occ_class_names = [#0~16
+    'car', 'truck', 'trailer', 'bus', 'construction_vehicle',
+    'bicycle', 'motorcycle', 'pedestrian', 'traffic_cone', 'barrier',
+    'driveable_surface', 'other_flat', 'sidewalk',
+    'terrain', 'manmade', 'vegetation', 'free'
+]
 data_config = {
     'cams': [
         'CAM_FRONT_LEFT', 'CAM_FRONT', 'CAM_FRONT_RIGHT', 'CAM_BACK_LEFT',
@@ -74,7 +79,7 @@ data_config = {
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-batch_size=2
+batch_size=1
 bev_embed_dims=256
 # Model
 grid_config = {
@@ -117,15 +122,22 @@ model = dict(
         num_outs=1,#4 for yolo det CustomFPN当前只输出单一特征图
         start_level=0,
         out_ids=[0]),
-    det2d_cfg=dict(    
-        type='YOLOXHeadCustom',
-        num_classes=10,
-        in_channels=512,
-        strides=[16],#[8, 16, 32, 64],
-        train_cfg=dict(assigner=dict(
-            type='SimOTAAssigner', center_radius=2.5)),
-        test_cfg=dict(score_thr=0.01, nms=dict(
-            type='nms', iou_threshold=0.65)),
+    # det2d_cfg=dict(    
+    #     type='YOLOXHeadCustom',
+    #     num_classes=10,
+    #     in_channels=512,
+    #     strides=[16],#[8, 16, 32, 64],
+    #     train_cfg=dict(assigner=dict(
+    #         type='SimOTAAssigner', center_radius=2.5)),
+    #     test_cfg=dict(score_thr=0.01, nms=dict(
+    #         type='nms', iou_threshold=0.65)),
+    # ),
+    seg2d_cfg=dict(
+        type="FCN32s",
+        n_class=len(occ_class_names),
+        loss_seg=dict(
+                    type='CrossEntropyLoss',
+                    loss_weight=1.0),
     ),
     depth_net=dict(
         type='DepthNet',
@@ -190,7 +202,8 @@ train_pipeline = [
         is_train=True,
         data_config=data_config,
         sequential=True,
-        with_2d=True,
+        with_2d=False,
+        seg2d_root='data/nuscenes/seg2d_mask/',
         data_aug_conf=data_config),
     dict(type='LoadAnnotations'),
     dict(
@@ -217,7 +230,7 @@ train_pipeline = [
        'img_shape', 'scene_name',     # 'labels2d','bboxes2d',
         # 'bboxes2d_xyxy','centers2d','labels2d','bboxdepths2d'
         # 'pts_filename','box_mode_3d','box_type_3d'
-        'canvas'
+        'canvas',#'sem2d'
         ))
 ]
 

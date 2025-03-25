@@ -198,7 +198,7 @@ bda_aug_conf = dict(
 
 train_pipeline = [
     dict(
-        type='PrepareImageInputsv2',
+        type='PrepareImageInputsv2',#change to v1?
         is_train=True,
         data_config=data_config,
         sequential=True),
