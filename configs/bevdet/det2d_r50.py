@@ -79,7 +79,7 @@ data_config = {
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-batch_size=1
+batch_size=8
 bev_embed_dims=256
 # Model
 grid_config = {
@@ -103,7 +103,7 @@ multi_adj_frame_id_cfg = (1, 0+1, 1)
 model = dict(
     type='Det2D',
     grid_config=grid_config,
-    loss_depth_weight=3.0,
+    loss_depth_weight=0.5,
     img_backbone=dict(
         pretrained='torchvision://resnet50',
         type='ResNet',
@@ -119,9 +119,9 @@ model = dict(
         type='CustomFPN',
         in_channels=[1024, 2048],
         out_channels=512,
-        num_outs=1,#4 for yolo det CustomFPN当前只输出单一特征图
-        start_level=0,
-        out_ids=[0]),
+        num_outs=1,#输出尺寸的数量 4 for yolo det CustomFPN当前只输出单一特征图
+        start_level=0,#FPN的首个输入特征图索引
+        out_ids=[0]),#理论不超过输入数量
     # det2d_cfg=dict(    
     #     type='YOLOXHeadCustom',
     #     num_classes=10,
@@ -137,6 +137,7 @@ model = dict(
         n_class=len(occ_class_names),
         loss_seg=dict(
                     type='CrossEntropyLoss',
+                    use_sigmoid=False,
                     loss_weight=1.0),
     ),
     depth_net=dict(
@@ -266,14 +267,14 @@ share_data_config = dict(
     modality=input_modality,
     img_info_prototype='bevdet4d',
     multi_adj_frame_id_cfg=multi_adj_frame_id_cfg,
-    version="v1.0-mini",
-    # version="v1.0-trainval",
+    # version="v1.0-mini",
+    version="v1.0-trainval",
 )
 
 test_data_config = dict(
     pipeline=test_pipeline,
     data_root=data_root,    
-    ann_file=data_root + 'bevdetv3-nuscenes_infos_val.pkl',
+    ann_file=data_root + 'bevdetv3-nuscenes-mini_infos_val.pkl',
     grid_conf=map_grid_conf,
     )
 
@@ -285,7 +286,7 @@ data = dict(
         type='CBGSDataset',
         dataset=dict(
         data_root=data_root,
-        ann_file=data_root + 'bevdetv3-nuscenes_infos_train.pkl',
+        ann_file=data_root + 'bevdetv3-nuscenes-mini_infos_train.pkl',
         pipeline=train_pipeline,
         classes=class_names,
         test_mode=False,
@@ -314,7 +315,7 @@ for key in ['val', 'test']:
 # data['train'].update(share_data_config)
 data['train']['dataset'].update(share_data_config)
 # Optimizer
-optimizer = dict(type='AdamW', lr=2e-4, weight_decay=1e-2)
+optimizer = dict(type='AdamW', lr=2e-2, weight_decay=1e-4)
 # optimizer = dict(
 #     type='AdamW',
 #     lr=2e-4,
@@ -323,7 +324,8 @@ optimizer = dict(type='AdamW', lr=2e-4, weight_decay=1e-2)
 #             'img_backbone': dict(lr_mult=0.25),
 #         }),
 #     weight_decay=0.01)
-optimizer_config = dict(grad_clip=dict(max_norm=5, norm_type=2))
+optimizer_config = dict(grad_clip=None)
+# optimizer_config = dict(grad_clip=dict(max_norm=5, norm_type=2))
 lr_config = dict(
     policy='step',
     warmup='linear',

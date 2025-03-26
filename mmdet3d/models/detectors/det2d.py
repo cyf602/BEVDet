@@ -54,7 +54,8 @@ class Det2D(MVXTwoStageDetector):
         if torch.cuda.current_device()==0:
             if self.depth:
                 self.depthvis_root="vis/vis2d/"+'depth/'
-                os.mkdir(self.depthvis_root)
+                if not os.path.exists(self.depthvis_root):
+                    os.mkdir(self.depthvis_root)
                 self.maxd=self.grid_config['depth'][1]#最大深度距离(m)
                 self.mind=self.grid_config['depth'][0]#最小深度距离(m)
 
@@ -84,8 +85,9 @@ class Det2D(MVXTwoStageDetector):
         if self.det2d:
             outs_2d=self.det2t_head(**feats)
         # x=x[0].flatten(0,1)
-        depth=self.depthnet(x[0].flatten(0,1),mlp_input)#?应为B * N, C512, H, W
-        depth=depth.softmax(dim=1)#C应为depthnet depth_channels
+        if self.depth:  
+            depth=self.depthnet(x[0].flatten(0,1),mlp_input)#?应为B * N, C512, H, W
+            depth=depth.softmax(dim=1)#C应为depthnet depth_channels
         gt_bboxes=kwargs['bboxes2d_xyxy']
         gt_labels=kwargs['labels2d']
         centers2d=kwargs['centers2d']
@@ -106,7 +108,7 @@ class Det2D(MVXTwoStageDetector):
             fg_mask = torch.max(depth_labels, dim=1).values > 0.0
             loss_depth=self.get_depth_loss(depth_labels, depth,fg_mask)#[6,118,16,44]
             losses2d.update(dict(loss_depth=loss_depth))
-            if depth.device==torch.device("cuda:0") and self.visdepth_idx%200==10:
+            if depth.device==torch.device("cuda:0") and self.visdepth_idx%500==10:
                 pr_depth=torch.argmax(depth,dim=1)
                 pr_depth=pr_depth.view(B,N,*pr_depth.shape[1:])[0]
                 depth_labels=depth_labels.view(B,N,*pr_depth.shape[1:],self.D)

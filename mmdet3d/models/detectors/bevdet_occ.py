@@ -184,7 +184,8 @@ class BEVStereo4DOCC(BEVStereo4D):
             if mask_camera is not None:
                 final_mask=torch.logical_and(final_mask,mask_camera)
             if self.use_flow2d:
-                final_mask=torch.sum(final_mask,dim=-1)#??????
+                final_mask=torch.sum(final_mask,dim=-1)
+                final_mask=(final_mask>0)
             final_mask=final_mask.view(-1)
             loss_['loss_flow']=self.loss_flow(preds_flow[final_mask], voxel_flow[final_mask],avg_factor=torch.sum(final_mask))
             #监督visible mask,nonfree
