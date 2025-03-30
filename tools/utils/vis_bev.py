@@ -205,9 +205,17 @@ def vis_flow_gt(data_infos,savevis_root="vis/flowgt/"):
 
 def vis_gt_txt(npz_file,save_root='vis/vis3d/gt'):
     #将单一文件转为txt 用于cloudcompare可视化
+    token=npz_file.split('/')[-2]
     occ_data=np.load(npz_file)
-    occgt=occ_data['semantics']
+    occ_gt=occ_data['semantics']
     vismask=occ_data['vismask']
+    nonfree=occ_gt!=16
+    outsave=f'{token}_semgt_mask.txt'
+    results = np.hstack((indices[vismask], occ_gt[vismask][:, np.newaxis]))
+    np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
+    outsave=f'{token}_semgt_nonfree.txt'
+    results = np.hstack((indices[nonfree], occ_gt[nonfree][:, np.newaxis]))
+    np.savetxt(os.path.join(save_root,outsave),results,fmt='%.2f',delimiter=',', header='x,y,z,value', comments='')
 
 def vis_gt_txts(infos,save_root='vis/vis3d/gt'):
     if not os.path.exists(save_root):

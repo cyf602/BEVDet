@@ -1,4 +1,5 @@
 import os
+import random
 os.environ["CUDA_VISIBLE_DEVIES"]="0"
 import glob
 import numpy as np
@@ -137,6 +138,8 @@ def process_one_npz(batch,i,data_infos):
     coord_indexs=np.unique(coord_indexs,axis=0)#end of rays 11w->2.8w
     choose_labels=gt_semantics[tuple(coord_indexs.T)]
     choose_labels_idx=np.where(choose_labels!=16)
+    free_idx=np.where(choose_labels_idx==16)
+    free_indexs=coord_indexs[free_idx]#空端点
     coord_indexs=coord_indexs[choose_labels_idx]#非空端点
     vismask[tuple(coord_indexs.T)]=True
     # indices=np.round(coord_indexs).astype(int).reshape(-1,3)
@@ -186,9 +189,9 @@ def process_one_npz(batch,i,data_infos):
   
 def gen_vis_mask_atT(center,coord_indexs,vismask):
     coord_indexs=np.unique(coord_indexs.cpu().numpy(),axis=0)#end of rays 11w->2.8w
-    choose_labels=gt_semantics[tuple(coord_indexs.T)]
-    choose_labels_idx=np.where(choose_labels!=16)
-    coord_indexs=coord_indexs[choose_labels_idx]#非空端点
+    # choose_labels=gt_semantics[tuple(coord_indexs.T)]
+    # choose_labels_idx=np.where(choose_labels!=16)
+    # coord_indexs=coord_indexs[choose_labels_idx]#非空端点
     vismask[tuple(coord_indexs.T)]=True
     # indices=np.round(coord_indexs).astype(int).reshape(-1,3)
     #在每个ray上采样,要保证端点采样(用于遮挡判断除外)
@@ -236,12 +239,13 @@ def gen_vis_mask_atT(center,coord_indexs,vismask):
             # t_values=np.sort((np.concatenate((t_values,t_values_add))))#unique函数自动排序
             # t_values.extend(t_values_add)
             # t_values.sort()
-        # for t_value in t_values:###遮挡检测
-        #     indice=np.round(center+t_value*(coord_index-center)).astype(int)
-        #     if gt_semantics[indice[0],indice[1],indice[2]]!=16:
-        #         break
-        #     else:
-        #         vismask[indice[0],indice[1],indice[2]]=True
+        elif random.randrange(1, 31)<2:#free ray
+            for t_value in t_values[5:]:###遮挡检测
+                indice=np.round(center+t_value*(coord_index-center)).astype(int)
+                # if gt_semantics[indice[0],indice[1],indice[2]]!=16:
+                #     break
+                # else:
+                vismask[indice[0],indice[1],indice[2]]=True
 
     # indices = np.round(
     #                 center
@@ -384,7 +388,7 @@ if __name__=="__main__":
         
         #save
         occ_gt['vismask']=vismask
-        save_path=info['occv2_path'].replace('openocc_v2','openocc_v2_nextrend1112')
+        save_path=info['occv2_path'].replace('openocc_v2','openocc_v2_sky330')
         if save_path[-4:]!=".npz":
             save_path=save_path+"/labels.npz"
         if not os.path.exists(os.path.dirname(save_path)):
