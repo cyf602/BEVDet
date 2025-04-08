@@ -81,7 +81,7 @@ class BottleneckCSP(nn.Module):
 @HEADS.register_module()
 class YOLOP_SEG(nn.Module):
     def __init__(self,
-                nc,
+                n_class,
                 in_channel=512,
                 loss_seg=dict(
                     type='CrossEntropyLoss',
@@ -91,10 +91,11 @@ class YOLOP_SEG(nn.Module):
         self.up=nn.Upsample(scale_factor=2,mode='bilinear')#nearest
         self.conv1=Conv(self.c,self.c//2,3,1)
         self.csp1=Bottleneck(self.c//2,self.c//4,g=1,shortcut=False)
-        self.conv2=Conv(self.c//2,self.c//4,3,1)
+        self.conv2=Conv(self.c//4,self.c//4,3,1)
         self.csp2=Bottleneck(self.c//4,self.c//8,g=1,shortcut=False)
-        self.classifier=Conv(self.c//8,nc,3,1)
+        self.classifier=Conv(self.c//8,n_class,3,1)
         self.vis_idx=0
+        self.loss_seg=build_loss(loss_seg)
         from datetime import datetime
         if torch.cuda.current_device()==0:
             self.save_vis2d_root="vis/vis2d/"+datetime.now().strftime("%Y-%m-%d_%H:%M:%S")+'/'
@@ -118,9 +119,9 @@ class YOLOP_SEG(nn.Module):
         return loss_dict
     
     def visseg(self,seg_prs,seg_gts,canvas):
-        seg_pr_ims=colors_map[seg_prs]
         seg_gts-=1#这里只是可视化时对应，监督时free还是0
-        seg_gts[seg_gts==255]=16
+        seg_prs-=1
+        seg_pr_ims=colors_map[seg_prs]
         seg_gt_ims=colors_map[seg_gts]
         for i, canva in enumerate(canvas):
             segvisimg=np.concatenate([seg_gt_ims[i],canva,seg_pr_ims[i]],axis=1)

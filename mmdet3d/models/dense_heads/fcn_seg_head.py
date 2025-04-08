@@ -87,11 +87,11 @@ class FCN32s(nn.Module):
         return loss_dict
     
     def visseg(self,seg_prs,seg_gts,canvas):
-        seg_pr_ims=colors_map[seg_prs]
         seg_gts-=1#这里只是可视化时对应，监督时free还是0
         seg_prs-=1
         # seg_gts[seg_gts==255]=16
         # seg_prs[seg_prs==255]=16
+        seg_pr_ims=colors_map[seg_prs]
         seg_gt_ims=colors_map[seg_gts]
         for i, canva in enumerate(canvas):
             segvisimg=np.concatenate([seg_gt_ims[i],canva,seg_pr_ims[i]],axis=1)

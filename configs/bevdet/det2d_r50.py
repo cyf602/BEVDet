@@ -79,7 +79,7 @@ data_config = {
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-batch_size=8
+batch_size=2
 bev_embed_dims=256
 # Model
 grid_config = {
@@ -274,19 +274,19 @@ share_data_config = dict(
 test_data_config = dict(
     pipeline=test_pipeline,
     data_root=data_root,    
-    ann_file=data_root + 'bevdetv3-nuscenes-mini_infos_val.pkl',
+    ann_file=data_root + 'bevdetv3-nuscenes_infos_val.pkl',
     grid_conf=map_grid_conf,
     )
 
 data = dict(
     samples_per_gpu=batch_size,
-    workers_per_gpu=4,
+    workers_per_gpu=batch_size,
     shuffle=True,
     train=dict(
         type='CBGSDataset',
         dataset=dict(
         data_root=data_root,
-        ann_file=data_root + 'bevdetv3-nuscenes-mini_infos_train.pkl',
+        ann_file=data_root + 'bevdetv3-nuscenes_infos_train.pkl',
         pipeline=train_pipeline,
         classes=class_names,
         test_mode=False,
@@ -324,8 +324,8 @@ optimizer = dict(type='AdamW', lr=2e-2, weight_decay=1e-4)
 #             'img_backbone': dict(lr_mult=0.25),
 #         }),
 #     weight_decay=0.01)
-optimizer_config = dict(grad_clip=None)
-# optimizer_config = dict(grad_clip=dict(max_norm=5, norm_type=2))
+# optimizer_config = dict(grad_clip=None)
+optimizer_config = dict(grad_clip=dict(max_norm=15, norm_type=2))
 lr_config = dict(
     policy='step',
     warmup='linear',

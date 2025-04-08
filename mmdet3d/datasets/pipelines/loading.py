@@ -1157,6 +1157,7 @@ class PrepareImageInputs(object):
             cam_data = results['curr']['cams'][cam_name]
             filename = cam_data['data_path']
             img = Image.open(filename)#img.mode='RGB'
+            seg2dmask=None
             if self.with_seg2d:
                 segmask_path=self.seg2d_root+filename.split('/')[-1][:-4]+"_seg2d.png"
                 seg2dmask= Image.open(segmask_path)

@@ -1,5 +1,6 @@
 _base_ = ['./det2d_r50.py']
 numC=256
+batch_size=8
 model=dict(
     downsample=8,
     loss_depth_weight=0.25,
@@ -26,8 +27,27 @@ model=dict(
         in_channels=numC,
         mid_channels=numC
     ),
+    # seg2d_cfg=dict(
+    #     type="FCN32s",
+    #     n_class=17,
+    #     loss_seg=dict(
+    #         type='CrossEntropyLoss',
+    #         use_sigmoid=False,
+    #         loss_weight=1.0),
+    # ),
     seg2d_cfg=dict(
+        type="YOLOP_SEG",
+        n_class=17,
         in_channel=numC,
-        n_deconvs=3,
+        loss_seg=dict(
+            type='CrossEntropyLoss',
+            use_sigmoid=False,
+            loss_weight=1.0),
     ),
 )
+data = dict(
+    samples_per_gpu=batch_size,
+    workers_per_gpu=batch_size)
+
+optimizer = dict(type='AdamW', lr=2e-2, weight_decay=1e-4)
+resume_from='work_dirs/seg2d_r101_yolopseghead327/epoch_2.pth'
