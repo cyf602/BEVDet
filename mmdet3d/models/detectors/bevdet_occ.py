@@ -215,10 +215,14 @@ class BEVStereo4DOCC(BEVStereo4D):
                 preds_occ = preds_occ.reshape(-1, self.num_classes)
                 loss_occ = self.loss_occ(preds_occ, voxel_semantics,)
                 loss_['loss_occ'] = loss_occ
-        if preds_flow is not None  and self.vis_idx%1000==5 and preds_flow.device==torch.device('cuda:0'):
-            preds_occ=preds_occ.detach().clone()
-            preds_occ=preds_occ.argmax(dim=-1)
-            preds_occ=preds_occ.view(-1,H,W,ZC)
+        else:
+            occmask=mask_camera
+            ZC=16
+        if preds_flow is not None  and self.vis_idx%100==5 and preds_flow.device==torch.device('cuda:0'):
+            if preds_occ is not None:
+                preds_occ=preds_occ.detach().clone()
+                preds_occ=preds_occ.argmax(dim=-1)
+                preds_occ=preds_occ.view(-1,H,W,ZC)
             preds_flow=preds_flow.detach().clone().view(B,H,W,ZF,-1)
             voxel_flow=voxel_flow.view(B,H,W,ZF,-1)
             voxel_semantics=voxel_semantics.view(B,H,W,ZC)
@@ -237,12 +241,15 @@ class BEVStereo4DOCC(BEVStereo4D):
                     img=None,
                     rescale=False,
                     occ_threshold=0.25,#focal loss
+                    voxel_semantics=None,#只用于可视化
+                    voxel_flow=None,
                     **kwargs):
         """Test function without augmentaiton."""
         img_feats, _, _ = self.extract_feat(
             points, img=img, img_metas=img_metas, **kwargs)
         occ_res,flow_pred=None,None
         # bncdhw->bnwhdc
+        occgt=voxel_semantics[0][0].cpu().numpy()
         if self.pred_occ:
             _occ_pred = self.occ_conv(img_feats[0])
             B,C,Z,H,W=_occ_pred.shape 
@@ -261,7 +268,7 @@ class BEVStereo4DOCC(BEVStereo4D):
                 occ_res=occ_score.argmax(-1)
             occ_res = occ_res.squeeze(dim=0).cpu().numpy().astype(np.uint8)#squeeze: test时bs=1
         else:
-            occ_res=None
+            occ_res=occgt
         if self.pred_flow:
             B,C,Z,H,W=img_feats[-1].shape
             if self.use_flow2d:
@@ -283,7 +290,9 @@ class BEVStereo4DOCC(BEVStereo4D):
                 flow_pred[occ_sta]=0
         else:
             flow_pred=np.zeros((W,H,Z,2),dtype=np.float16)
-        # save_occ_bin(occ_res.copy(),flow_pred,idx=self.vis_idx)
+        flow_pred[occgt>8]=0
+        save_occ_bin(occ_res.copy(),flow_pred,idx=self.vis_idx)
+        save_occ_bin(occgt,voxel_flow[0][0].cpu().numpy(),save_root='vis/vis_occ_gt',idx=self.vis_idx)
         self.vis_idx+=1
         return [{'occ_results':occ_res,'flow_results':flow_pred}]
 

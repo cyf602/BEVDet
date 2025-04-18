@@ -1,9 +1,16 @@
 _base_ = ['./det2d_r50.py']
+grid_config = {
+    'x': [-40, 40, 0.4],
+    'y': [-40, 40, 0.4],
+    'z': [-1, 5.4, 0.4],
+    'depth': [1.0, 45.0, 0.5],#0.25->10g/bs
+}
 numC=256
 batch_size=8
 model=dict(
     downsample=8,
-    loss_depth_weight=0.25,
+    loss_depth_weight=0.5,
+    grid_config=grid_config,
     img_backbone=dict(
         # pretrained='torchvision://resnet50',
         pretrained='ckpts/resnet101-5d3b4d8f.pth',
@@ -25,7 +32,8 @@ model=dict(
         out_ids=[0]),
     depth_net=dict(
         in_channels=numC,
-        mid_channels=numC
+        mid_channels=numC,
+        depth_channels=int((grid_config['depth'][1]-grid_config['depth'][0])/grid_config['depth'][2]),#"self.D"
     ),
     # seg2d_cfg=dict(
     #     type="FCN32s",
@@ -49,5 +57,6 @@ data = dict(
     samples_per_gpu=batch_size,
     workers_per_gpu=batch_size)
 
-optimizer = dict(type='AdamW', lr=2e-2, weight_decay=1e-4)
-resume_from='work_dirs/seg2d_r101_yolopseghead327/epoch_2.pth'
+optimizer = dict(type='AdamW', lr=2e-3, weight_decay=1e-2)
+# resume_from='work_dirs/seg2d_r101_yolopseghead327/epoch_2.pth'
+# load_from='work_dirs/seg2d_depth_0407/epoch_4.pth'

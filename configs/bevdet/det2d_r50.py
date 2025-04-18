@@ -81,6 +81,12 @@ data_config = {
 }
 batch_size=2
 bev_embed_dims=256
+grid_config = {
+    'x': [-51.2, 51.2, 0.64],#分辨率要是8的倍数（bev fpn)
+    'y': [-51.2, 51.2, 0.64],
+    'z': [-5, 3, 8],
+    'depth': [1.0, 60.0, 0.5],
+}
 # Model
 grid_config = {
     'x': [-51.2, 51.2, 0.64],#分辨率要是8的倍数（bev fpn)
@@ -151,17 +157,17 @@ model = dict(
         aspp_mid_channels=96,
     ),
     # model training and testing settings
-    train_cfg=dict(
-        pts=dict(
-            point_cloud_range=point_cloud_range,
-            grid_size=[1024, 1024, 40],
-            voxel_size=voxel_size,
-            out_size_factor=10*grid_config['x'][2],
-            dense_reg=1,
-            gaussian_overlap=0.1,
-            max_objs=500,
-            min_radius=2,
-            code_weights=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])),
+    # train_cfg=dict(
+    #     pts=dict(
+    #         point_cloud_range=point_cloud_range,
+    #         grid_size=[1024, 1024, 40],
+    #         voxel_size=voxel_size,
+    #         out_size_factor=10*grid_config['x'][2],
+    #         dense_reg=1,
+    #         gaussian_overlap=0.1,
+    #         max_objs=500,
+    #         min_radius=2,
+    #         code_weights=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])),
     test_cfg=dict(
         pts=dict(
             pc_range=point_cloud_range[:2],
@@ -315,7 +321,7 @@ for key in ['val', 'test']:
 # data['train'].update(share_data_config)
 data['train']['dataset'].update(share_data_config)
 # Optimizer
-optimizer = dict(type='AdamW', lr=2e-2, weight_decay=1e-4)
+optimizer = dict(type='AdamW', lr=1e-2, weight_decay=1e-4)
 # optimizer = dict(
 #     type='AdamW',
 #     lr=2e-4,
@@ -325,14 +331,20 @@ optimizer = dict(type='AdamW', lr=2e-2, weight_decay=1e-4)
 #         }),
 #     weight_decay=0.01)
 # optimizer_config = dict(grad_clip=None)
-optimizer_config = dict(grad_clip=dict(max_norm=15, norm_type=2))
+optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
+# lr_config = dict(
+#     policy='step',
+#     warmup='linear',
+#     warmup_iters=200,
+#     warmup_ratio=0.001,
+#     step=[20,])
 lr_config = dict(
-    policy='step',
+    policy='CosineAnnealing',
     warmup='linear',
-    warmup_iters=200,
-    warmup_ratio=0.001,
-    step=[20,])
-runner = dict(type='EpochBasedRunner', max_epochs=20)
+    warmup_iters=500,
+    warmup_ratio=1.0 / 3,
+    min_lr_ratio=1e-3)
+runner = dict(type='EpochBasedRunner', max_epochs=10)
 evaluation = dict(interval=100, pipeline=test_pipeline)
 # runner = dict(type='IterBasedRunner', max_iters=20*7724)
 # evaluation = dict(interval=7724,pipeline=test_pipeline)

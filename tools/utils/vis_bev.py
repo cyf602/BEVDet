@@ -32,7 +32,8 @@ voxel_size=0.4
 indices = np.indices((X, Y, Z))#[3,x,y,z]
 indices=np.transpose(indices,(1,2,3,0))
 indices=indices*voxel_size
-
+loc_fit=np.array([39.8,39.8,0.8])
+indices-=loc_fit
 def vis_occ(semantics, flows,use_minv_thr=True,v_max_thr=-1):
     H, W, D = semantics.shape
     semantics_valid=(semantics!=16)#0~16类别号
