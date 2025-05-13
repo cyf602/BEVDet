@@ -81,7 +81,7 @@ class LoadOccGTFromFilev2(LoadTempOccGTFromFile):
         results['voxel_semantics'] = occ_labels['semantics']#[200,200,16]        
         results['voxel_flow']=occ_labels['flow']
         results['vismask']=occ_labels['vismask']
-        results['voxel_flow2d']=occ_labels['flow2d']
+        # results['voxel_flow2d']=occ_labels['flow2d']
         next_occgt_path=results.get('next_occv2_path',None)
         if next_occgt_path:
             occ_next_gt_path = os.path.join(next_occgt_path, "labels.npz")
@@ -1566,13 +1566,13 @@ class BEVAug(object):
                                      post_trans, bda_mat)
         if 'voxel_semantics' in results:
             if flip_dx:
-                results['voxel_semantics'] = results['voxel_semantics'][::-1,...].copy()
-                results['mask_lidar'] = results['mask_lidar'][::-1,...].copy()
-                results['mask_camera'] = results['mask_camera'][::-1,...].copy()
+                results['voxel_semantics'] = results['voxel_semantics'][::-1,...]#.copy()
+                results['mask_lidar'] = results['mask_lidar'][::-1,...]#.copy()
+                results['mask_camera'] = results['mask_camera'][::-1,...]#.copy()
             if flip_dy:
-                results['voxel_semantics'] = results['voxel_semantics'][:,::-1,...].copy()
-                results['mask_lidar'] = results['mask_lidar'][:,::-1,...].copy()
-                results['mask_camera'] = results['mask_camera'][:,::-1,...].copy()
+                results['voxel_semantics'] = results['voxel_semantics'][:,::-1,...]#.copy()
+                results['mask_lidar'] = results['mask_lidar'][:,::-1,...]#.copy()
+                results['mask_camera'] = results['mask_camera'][:,::-1,...]#.copy()
         if 'semantic_indices' in results:
             if flip_dx:#[y,x][200,400]
                 results['semantic_indices']=torch.flip(results['semantic_indices'],dims=[1])

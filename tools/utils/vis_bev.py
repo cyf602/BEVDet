@@ -34,7 +34,47 @@ indices=np.transpose(indices,(1,2,3,0))
 indices=indices*voxel_size
 loc_fit=np.array([39.8,39.8,0.8])
 indices-=loc_fit
-def vis_occ(semantics, flows,use_minv_thr=True,v_max_thr=-1):
+exchange_mat=np.array([[0,1],[1,0]])#颠倒数组顺序
+im_index=0
+def dfs_flow(flow,sem=None):
+    """flow: [H,W,2]2d速度流场
+            sem前景语义
+            画一张标注实体速度的图片
+    """
+    h,w,_=flow.shape
+    objs=[]
+    def dfs(flow,i,j,center,v,npt=0):
+        """center:中心点数组,npt物体栅格数
+                v:obj速度矢量
+        """
+        # flow=flow[:]
+        if i<0 or i>=h or j<0 or j>=h:return
+        if np.linalg.norm(flow[i,j])<0.2:#静止
+            return
+        center[:]=(center*npt+np.array([i,j]))/(npt+1)
+        v[:]=(v*npt+flow[i,j])/(npt+1)
+        npt+=1
+        flow[i,j]=0#visited
+        for direct in ([0,1],[0,-1],[1,0],[-1,0]):
+            dfs(flow,i+direct[0],j+direct[1],center,v,npt)
+    for x in range(h):
+        for y in range(w):
+            if np.linalg.norm(flow[x,y])<0.2:continue
+            center,v=np.array([0,0],dtype=float),np.array([0,0],dtype=float)
+            dfs(flow,x,y,center,v)
+            if np.linalg.norm(v)<1:continue
+            objs.append(dict(
+                center=np.round(exchange_mat@center),
+                v=exchange_mat@v,
+                cls_id=0 if sem is None else sem[x,y] 
+            ))
+    return objs
+
+def vis_occ(semantics:torch.Tensor, flows:torch.Tensor,use_minv_thr=True,v_max_thr=-1):
+    """
+            semantics:[200,200,16]
+            flows:[200,200,16,2]
+    """
     H, W, D = semantics.shape
     semantics_valid=(semantics!=16)#0~16类别号
     # semantics_valid = np.logical_not(semantics == 0)#
@@ -58,33 +98,60 @@ def vis_occ(semantics, flows,use_minv_thr=True,v_max_thr=-1):
     # flow_occ_bev_y=torch.gather(flows[...,1], dim=2,index=selected.unsqueeze(-1)).cpu().numpy()
     flow_occ_bev_x=torch.max(flows[...,0],dim=2).values.unsqueeze(-1).cpu().numpy()
     flow_occ_bev_y=torch.max(flows[...,1],dim=2).values.unsqueeze(-1).cpu().numpy()
-    flow_occ_bev_v=np.sqrt(flow_occ_bev_x**2+flow_occ_bev_y**2)
+    flow_occ_bev_v=np.sqrt(flow_occ_bev_x**2+flow_occ_bev_y**2)#[200,200,1/B]
     occ_bev = sem_occ_bev_torch.cpu().numpy()#[B,200,200,1]
+
     if v_max_thr>0:
         max_v_thr=v_max_thr#按指定阈值可视化
     else:
         max_v_thr=max(np.max(flow_occ_bev_v),0.1)
         V_MAX_THR=max_v_thr
     min_v_thr=0.1#小于该值的不画出来
-    occ_bev = occ_bev.flatten().astype(np.int32)
-    occ_bev_vis = colors_map[occ_bev].astype(np.uint8)#bev视角下各最高点语义颜色
+    _occ_bev = occ_bev.flatten().astype(np.int32)
+    occ_bev_vis = colors_map[_occ_bev].astype(np.uint8)#bev视角下各最高点语义颜色
     occ_bev_vis = occ_bev_vis.reshape(H,W,3)#[::-1, ::-1, :3]#::-1倒序？
     occ_bev_vis = cv2.resize(occ_bev_vis,(1024,1024))
     v_vis_bases=[]#x,y,v 按最大速度的比例画
     v_vis_minthrs=[]#
     v_vis_maxthrs=[]#按与预设值的比值画
-    channel_change=np.array([0,0,1])[None,None,:]
+    channel_change=np.array([1,1,0])[None,None,:]
+    #先画sem再画v
+    global im_index
+    occ_bev_vis=cv2.imread(f'vis/test/{im_index}_sempr.jpg')
     for v in (flow_occ_bev_x,flow_occ_bev_y,flow_occ_bev_v):
+        v[occ_bev>=8]=0
         maxv=max(np.max(v),1e-6)
-        v_vis_base=v/maxv*255*channel_change
-        v_vis_maxthr=v/max_v_thr*255*channel_change
+        v_vis_base=white_board-v/maxv*255*channel_change
+        v_vis_maxthr=white_board-v/max_v_thr*255*channel_change
         v=v.copy()
         # v[v<min_v_thr]=0
         v[v<max(maxv/10,1e-1)]=0
         v_vis_bases.append(cv2.resize(v_vis_base,(1024,1024)))
         v_vis_maxthrs.append(cv2.resize(v_vis_maxthr,(1024,1024)))
-        
-                    
+
+    im_index+=1
+    
+    #给flow图速度画箭头
+    semantics_front=(semantics<8)#0~8前景号
+    d=torch.arange(D).repeat(H,W,1).to(semantics.device)*semantics_front
+    selected = torch.argmax(d, axis=-1)#最高点序号？
+    sem_front_bev_torch = torch.gather(semantics, dim=2,
+                                index=selected.unsqueeze(-1))#最高点语义
+    front_bev=sem_front_bev_torch.cpu().numpy().squeeze(axis=-1)
+    objs=dfs_flow(np.concatenate([flow_occ_bev_x,flow_occ_bev_y],axis=-1),front_bev)
+    # print(objs)
+    for obj in objs:
+        ratio=1024/H
+        v_norm=np.linalg.norm(obj['v'])
+        vx,vy=obj['v']
+        d_arrow=np.array([0.25*vx+30*vx/v_norm,0.25*vy+30*vy/v_norm])
+        start_pt,end_pt=(ratio*obj['center']).astype(int), (ratio*(obj['center']+d_arrow)).astype(int)
+        # 画v_norm
+        cv2.arrowedLine(v_vis_maxthrs[-1],start_pt,end_pt, color=(255,0,0),thickness=2)
+        cv2.putText(v_vis_maxthrs[-1],'{:.2f}'.format(v_norm),end_pt,fontFace=cv2.FONT_HERSHEY_SIMPLEX,fontScale=2,color=(255,0,0),thickness=2)
+        # 画语义图中arrow
+        cv2.arrowedLine(occ_bev_vis,start_pt,end_pt, color=(255,0,0),thickness=2)
+        cv2.putText(occ_bev_vis,'{:.2f}'.format(v_norm),end_pt,fontFace=cv2.FONT_HERSHEY_SIMPLEX,fontScale=2,color=(255,0,0),thickness=2)
     # flow_occ_bev_x_vis=flow_occ_bev_x/np.max(flow_occ_bev_x+1e-6)*255
     # flow_occ_bev_y_vis=flow_occ_bev_y/np.max(flow_occ_bev_y+1e-6)*255
     # flow_occ_bev_v_vis=flow_occ_bev_v/np.max(flow_occ_bev_v+1e-6)*255
@@ -141,6 +208,10 @@ def vis_bev_view(occ_preds=None,occ_gts=None,flow_preds=None,flow_gts=None,idx=0
     #     print("!!incorrect vis shape:",idx,"-",row1.shape,row2.shape)
     final_image = np.concatenate([row3,row4], axis=0)
     mmcv.imwrite(final_image, os.path.join(save_root+time_str,"%d_0.jpg" % idx))
+    mmcv.imwrite(occ_gt_vis, os.path.join(save_root+time_str,"%d_occgt.jpg" % idx))
+    mmcv.imwrite(occ_preds_vis, os.path.join(save_root+time_str,"%d_occ_pr.jpg" % idx))
+    mmcv.imwrite(flow_gt_vis_mthr[:,-1024:,:], os.path.join(save_root+time_str,"%d_vnorm_gt.jpg" % idx))
+    mmcv.imwrite(flow_pred_vis_mthr[:,-1024:,:], os.path.join(save_root+time_str,"%d_vnorm_pr.jpg" % idx))
     # mmcv.imwrite(row1, os.path.join(save_root+time_str,"%d_gt.jpg" % idx))
     # mmcv.imwrite(row2, os.path.join(save_root+time_str,"%d_pred.jpg" % idx))
     pass   

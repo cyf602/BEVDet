@@ -19,4 +19,5 @@ python -m torch.distributed.launch \
     $CONFIG \
     $CHECKPOINT \
     --launcher pytorch \
+    --eval bbox \
     ${@:4}

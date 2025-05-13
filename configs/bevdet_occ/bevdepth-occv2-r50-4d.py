@@ -72,18 +72,18 @@ _ffn_dim_ = _dim_*2
 numC_Trans = 32
 
 multi_adj_frame_id_cfg = (1, 2+1, 1)
-
+batch_size=1
 model = dict(
     type='BEVDepth4DOCC',
     align_after_view_transfromation=False,
     num_adj=len(range(*multi_adj_frame_id_cfg)),
     num_extraconv2d=0,#conv2d nums in head
     pred_flow=True,
-    pred_occ=True,
+    pred_occ=False,
     use_flow2d=False,
     img_backbone=dict(
         # pretrained='torchvision://resnet50',
-        pretrained='ckpts/resnet101-5d3b4d8f.pth',
+        # pretrained='ckpts/resnet101-5d3b4d8f.pth',
         type='ResNet',
         depth=101,
         num_stages=4,
@@ -194,6 +194,7 @@ train_pipeline = [
 
 test_pipeline = [
     dict(type='PrepareImageInputs', data_config=data_config, sequential=True),
+    dict(type='LoadOccGTFromFilev2'),#用于save_occ_bin出图
     dict(type='LoadAnnotations'),
     dict(type='BEVAugv2',
          bda_aug_conf=bda_aug_conf,
@@ -215,7 +216,8 @@ test_pipeline = [
                 type='DefaultFormatBundle3D',
                 class_names=class_names,
                 with_label=False),
-            dict(type='Collect3D', keys=['points', 'img_inputs'])
+            dict(type='Collect3D', keys=['points', 'img_inputs',
+                'voxel_semantics','voxel_flow'])
         ])
 ]
 
@@ -240,8 +242,8 @@ test_data_config = dict(
     ann_file=data_root + 'bevdetv3-nuscenes_infos_val.pkl')
 
 data = dict(
-    samples_per_gpu=4,
-    workers_per_gpu=4,
+    samples_per_gpu=batch_size,
+    workers_per_gpu=batch_size,
     # train=dict(
     #     type='CBGSDataset',
     #     dataset=dict(
@@ -285,8 +287,8 @@ lr_config = dict(
     warmup_iters=200,
     warmup_ratio=0.001,
     step=[22,27])
-checkpoint_config = dict(interval=1)
-evaluation = dict(interval=30, pipeline=test_pipeline)
+checkpoint_config = dict(interval=6)
+evaluation = dict(interval=12, pipeline=test_pipeline)
 runner = dict(type='EpochBasedRunner', max_epochs=30)
 
 # custom_hooks = [
@@ -296,6 +298,8 @@ runner = dict(type='EpochBasedRunner', max_epochs=30)
 #         priority='NORMAL',
 #     ),
 # ]
-# resume_from="work_dirs/bevdepth-newmaskt2_50free_1029/epoch_21.pth"
+resume_from="work_dirs/bevdepthocc_pretrainseg2d_yolopsegep5_408/epoch_24.pth"
 # resume_from="work_dirs/bevdepthocc-0207/epoch_6.pth"
 # fp16 = dict(loss_scale='dynamic')
+# load_from="work_dirs/seg2d-depth_yolohead_wdecay1e-2_0408/epoch_1_fitted.pth"
+# load_from="ckpts/occ-base-ep30.pth"

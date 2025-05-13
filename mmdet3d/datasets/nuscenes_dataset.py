@@ -188,7 +188,7 @@ class NuScenesDataset(Custom3DDataset):
             canvas_w = int(patch_w / map_xbound[2])
             self.map_patch_size = (patch_h, patch_w)
             self.map_canvas_size = (canvas_h, canvas_w)
-            self.nusc = NuScenes(version=version, dataroot=self.data_root, verbose=False)
+            # self.nusc = NuScenes(version=version, dataroot=self.data_root, verbose=False)
             self.vector_map = VectorizedLocalMap(
                 dataroot=self.map_dataroot,
                 patch_size=self.map_patch_size,
@@ -239,7 +239,7 @@ class NuScenesDataset(Custom3DDataset):
         """
         data = mmcv.load(ann_file, file_format='pkl')
         data_infos = list(sorted(data['infos'], key=lambda e: e['timestamp']))
-        data_infos = data_infos[::self.load_interval]#[:100]
+        data_infos = data_infos[::self.load_interval]#[:50]#[::2]
         self.metadata = data['metadata']
         self.version = self.metadata['version']
         stamps=[data_info['timestamp']/1e6 for data_info in data_infos]
@@ -500,7 +500,8 @@ class NuScenesDataset(Custom3DDataset):
         mmcv.mkdir_or_exist(jsonfile_prefix)
         res_path = osp.join(jsonfile_prefix, 'results_nusc.json')
         print('Results writes to', res_path)
-        mmcv.dump(nusc_submissions, res_path)
+        # mmcv.dump(nusc_submissions, res_path)
+        mmcv.dump(nusc_submissions, '/root/autodl-tmp/bevdepth_long.json')#应对系统盘空间不足及可视化
         return res_path
 
     def _set_sequence_group_flag(self):
