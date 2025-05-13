@@ -83,7 +83,13 @@ grid_config = {
     'z': [-5, 3, 8],
     'depth': [1.0, 60.0, 1.0],
 }
-num_epochs=20
+map_grid_conf = {
+    'xbound': [-30.0, 30.0, 0.15],
+    'ybound': [-15.0, 15.0, 0.15],
+    'zbound': [-5.0,3.0,8.0],#[-10.0, 10.0, 20.0],
+    'dbound': [1.0, 60.0, 0.5],
+}
+num_epochs=2
 batch_size=16
 num_gpus=1
 num_iters_per_epoch = 123584 // (num_gpus * batch_size)#cgbs
@@ -91,7 +97,8 @@ voxel_size = [0.1, 0.1, 0.2]
 
 numC_Trans = 80
 
-multi_adj_frame_id_cfg = (1, 0+1, 1)
+multi_adj_frame_id_cfg = (1, 1+1, 1)
+file_client_args = dict(backend='disk')
 
 model = dict(
     type='BEVDet4D',
@@ -217,16 +224,23 @@ train_pipeline = [
         data_config=data_config,
         sequential=True),
     dict(type='LoadAnnotations'),
+    # dict(type='RasterizeMapVectors', map_grid_conf=map_grid_conf),
     dict(
         type='BEVAug',
         bda_aug_conf=bda_aug_conf,
         classes=class_names),
-    
+    dict(
+        type='LoadPointsFromFile',
+        coord_type='LIDAR',
+        load_dim=5,
+        use_dim=5,
+        file_client_args=file_client_args),
+    dict(type='PointToMultiViewDepth', downsample=1, grid_config=grid_config),
     dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
     dict(type='ObjectNameFilter', classes=class_names),
     dict(type='DefaultFormatBundle3D', class_names=class_names),
     dict(
-        type='Collect3D', keys=['img_inputs', 'gt_bboxes_3d', 'gt_labels_3d'])
+        type='Collect3D', keys=['img_inputs', 'gt_bboxes_3d', 'gt_labels_3d','gt_depth'])
 ]
 
 test_pipeline = [
@@ -287,6 +301,7 @@ data = dict(
         classes=class_names,
         test_mode=False,
         use_valid_flag=True,
+        grid_conf=map_grid_conf,
         # we use box_type_3d='LiDAR' in kitti and nuscenes dataset
         # and box_type_3d='Depth' in sunrgbd and scannet dataset.
         box_type_3d='LiDAR')),

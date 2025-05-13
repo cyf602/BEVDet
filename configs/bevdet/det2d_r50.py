@@ -79,7 +79,10 @@ data_config = {
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-batch_size=2
+batch_size=16
+num_epochs=1
+num_gpus=1
+num_iters_per_epoch = 123584 // (num_gpus * batch_size)#cgbs
 bev_embed_dims=256
 grid_config = {
     'x': [-51.2, 51.2, 0.64],#分辨率要是8的倍数（bev fpn)
@@ -138,14 +141,14 @@ model = dict(
     #     test_cfg=dict(score_thr=0.01, nms=dict(
     #         type='nms', iou_threshold=0.65)),
     # ),
-    seg2d_cfg=dict(
-        type="FCN32s",
-        n_class=len(occ_class_names),
-        loss_seg=dict(
-                    type='CrossEntropyLoss',
-                    use_sigmoid=False,
-                    loss_weight=1.0),
-    ),
+    # seg2d_cfg=dict(
+    #     type="FCN32s",
+    #     n_class=len(occ_class_names),
+    #     loss_seg=dict(
+    #                 type='CrossEntropyLoss',
+    #                 use_sigmoid=False,
+    #                 loss_weight=1.0),
+    # ),
     depth_net=dict(
         type='DepthNet',
         in_channels=512,
@@ -321,7 +324,7 @@ for key in ['val', 'test']:
 # data['train'].update(share_data_config)
 data['train']['dataset'].update(share_data_config)
 # Optimizer
-optimizer = dict(type='AdamW', lr=1e-2, weight_decay=1e-4)
+optimizer = dict(type='AdamW', lr=1e-2, weight_decay=1e-2)
 # optimizer = dict(
 #     type='AdamW',
 #     lr=2e-4,
@@ -344,8 +347,11 @@ lr_config = dict(
     warmup_iters=500,
     warmup_ratio=1.0 / 3,
     min_lr_ratio=1e-3)
-runner = dict(type='EpochBasedRunner', max_epochs=10)
-evaluation = dict(interval=100, pipeline=test_pipeline)
+runner = dict(type='IterBasedRunner', max_iters=num_epochs * num_iters_per_epoch)
+evaluation = dict(interval=num_iters_per_epoch,pipeline=test_pipeline)
+checkpoint_config = dict(interval=20*num_iters_per_epoch)
+# runner = dict(type='EpochBasedRunner', max_epochs=10)
+# evaluation = dict(interval=100, pipeline=test_pipeline)
 # runner = dict(type='IterBasedRunner', max_iters=20*7724)
 # evaluation = dict(interval=7724,pipeline=test_pipeline)
 # checkpoint_config = dict(interval=7724)

@@ -102,7 +102,7 @@ _dim_ = 256
 _pos_dim_ = _dim_//2
 _ffn_dim_ = _dim_*2
 
-multi_adj_frame_id_cfg = (1, 1+1, 1)
+multi_adj_frame_id_cfg = (1, 3+1, 1)
 
 model = dict(
     type='BEVDepth4DFormer_Multitask',
@@ -146,7 +146,7 @@ model = dict(
         embed_dims=_dim_,
         encoder=dict(
             type='BEVFormerEncoder',
-            num_layers=3,
+            num_layers=3,#3->1
             pc_range=[grid_config['x'][0],grid_config['y'][0],grid_config['z'][0],grid_config['x'][1],grid_config['y'][1],grid_config['z'][1]],
             num_points_in_pillar=4,
             return_intermediate=False,
@@ -160,7 +160,7 @@ model = dict(
                     dict(
                         type='BevCrossAttention',
                         embed_dims=_dim_,
-                        num_levels=3, #bev特征图,本来这里是1
+                        num_levels=4, #bev特征图层数,本来这里是1
                     )
                 ],
                 ffn_cfgs=dict(
@@ -187,10 +187,13 @@ model = dict(
         type='CustomResNet',
         numC_input=numC_Trans,# * (len(range(*multi_adj_frame_id_cfg))+1),
         num_channels=[numC_Trans * 2, numC_Trans * 4, numC_Trans * 8]),
-    img_bev_encoder_neck=dict(
-        type='FPN_LSS',
-        in_channels=numC_Trans * 8 + numC_Trans * 2,
-        out_channels=256),
+    bev_channel_neck=dict(
+        type='ChannelConvert',
+        in_channels=[numC_Trans,numC_Trans * 2, numC_Trans * 4, numC_Trans * 8],),
+    # img_bev_encoder_neck=dict(
+    #     type='FPN_LSS',
+    #     in_channels=numC_Trans * 8 + numC_Trans * 2,
+    #     out_channels=256),
     pre_process=dict(
         type='CustomResNet',
         numC_input=numC_Trans,
@@ -212,7 +215,7 @@ model = dict(
         map_grid_conf=map_grid_conf,
         in_channels=256,
         pred_det=True,
-        pred_seg=True,
+        pred_seg=False,
         pred_vec=False,
         loss_seg=dict(
                 type='CrossEntropyLoss',
