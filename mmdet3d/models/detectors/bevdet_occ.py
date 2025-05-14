@@ -218,7 +218,7 @@ class BEVStereo4DOCC(BEVStereo4D):
         else:
             occmask=mask_camera
             ZC=16
-        if preds_flow is not None  and self.vis_idx%100!=5 and preds_flow.device==torch.device('cuda:0'):
+        if preds_flow is not None  and self.vis_idx%100==5 and preds_flow.device==torch.device('cuda:0'):
             if preds_occ is not None:
                 preds_occ=preds_occ.detach().clone()
                 preds_occ=preds_occ.argmax(dim=-1)
