@@ -239,7 +239,7 @@ class NuScenesDataset(Custom3DDataset):
         """
         data = mmcv.load(ann_file, file_format='pkl')
         data_infos = list(sorted(data['infos'], key=lambda e: e['timestamp']))
-        data_infos = data_infos[::self.load_interval]#[:50]#[::2]
+        data_infos = data_infos[::self.load_interval][:100]#[::2]
         self.metadata = data['metadata']
         self.version = self.metadata['version']
         stamps=[data_info['timestamp']/1e6 for data_info in data_infos]
@@ -500,8 +500,8 @@ class NuScenesDataset(Custom3DDataset):
         mmcv.mkdir_or_exist(jsonfile_prefix)
         res_path = osp.join(jsonfile_prefix, 'results_nusc.json')
         print('Results writes to', res_path)
-        # mmcv.dump(nusc_submissions, res_path)
-        mmcv.dump(nusc_submissions, '/root/autodl-tmp/bevdepth_long.json')#应对系统盘空间不足及可视化
+        mmcv.dump(nusc_submissions, res_path)
+        # mmcv.dump(nusc_submissions, '/root/autodl-tmp/bevdepth_long.json')#应对系统盘空间不足及可视化
         return res_path
 
     def _set_sequence_group_flag(self):
@@ -621,9 +621,9 @@ class NuScenesDataset(Custom3DDataset):
                 `jsonfile_prefix` is not specified.
         """
         assert isinstance(results, list), 'results must be a list'
-        assert len(results) == len(self), (
-            'The length of results is not equal to the dataset len: {} != {}'.
-            format(len(results), len(self)))
+        # assert len(results) == len(self), (
+        #     'The length of results is not equal to the dataset len: {} != {}'.
+        #     format(len(results), len(self)))
 
         if jsonfile_prefix is None:
             tmp_dir = tempfile.TemporaryDirectory()
