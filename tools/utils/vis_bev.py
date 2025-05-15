@@ -115,9 +115,9 @@ def vis_occ(semantics:torch.Tensor, flows:torch.Tensor,use_minv_thr=True,v_max_t
     v_vis_minthrs=[]#
     v_vis_maxthrs=[]#按与预设值的比值画
     channel_change=np.array([1,1,0])[None,None,:]
-    #先画sem再画v
-    global im_index
-    occ_bev_vis=cv2.imread(f'vis/test/{im_index}_sempr.jpg')
+    ## 先画sem再画v
+    # global im_index
+    # occ_bev_vis=cv2.imread(f'vis/test/{im_index}_sempr.jpg')
     for v in (flow_occ_bev_x,flow_occ_bev_y,flow_occ_bev_v):
         v[occ_bev>=8]=0
         maxv=max(np.max(v),1e-6)
@@ -129,29 +129,30 @@ def vis_occ(semantics:torch.Tensor, flows:torch.Tensor,use_minv_thr=True,v_max_t
         v_vis_bases.append(cv2.resize(v_vis_base,(1024,1024)))
         v_vis_maxthrs.append(cv2.resize(v_vis_maxthr,(1024,1024)))
 
-    im_index+=1
+    # im_index+=1
     
-    #给flow图速度画箭头
-    semantics_front=(semantics<8)#0~8前景号
-    d=torch.arange(D).repeat(H,W,1).to(semantics.device)*semantics_front
-    selected = torch.argmax(d, axis=-1)#最高点序号？
-    sem_front_bev_torch = torch.gather(semantics, dim=2,
-                                index=selected.unsqueeze(-1))#最高点语义
-    front_bev=sem_front_bev_torch.cpu().numpy().squeeze(axis=-1)
-    objs=dfs_flow(np.concatenate([flow_occ_bev_x,flow_occ_bev_y],axis=-1),front_bev)
-    # print(objs)
-    for obj in objs:
-        ratio=1024/H
-        v_norm=np.linalg.norm(obj['v'])
-        vx,vy=obj['v']
-        d_arrow=np.array([0.25*vx+30*vx/v_norm,0.25*vy+30*vy/v_norm])
-        start_pt,end_pt=(ratio*obj['center']).astype(int), (ratio*(obj['center']+d_arrow)).astype(int)
-        # 画v_norm
-        cv2.arrowedLine(v_vis_maxthrs[-1],start_pt,end_pt, color=(255,0,0),thickness=2)
-        cv2.putText(v_vis_maxthrs[-1],'{:.2f}'.format(v_norm),end_pt,fontFace=cv2.FONT_HERSHEY_SIMPLEX,fontScale=2,color=(255,0,0),thickness=2)
-        # 画语义图中arrow
-        cv2.arrowedLine(occ_bev_vis,start_pt,end_pt, color=(255,0,0),thickness=2)
-        cv2.putText(occ_bev_vis,'{:.2f}'.format(v_norm),end_pt,fontFace=cv2.FONT_HERSHEY_SIMPLEX,fontScale=2,color=(255,0,0),thickness=2)
+    # #给flow图速度画箭头
+    # semantics_front=(semantics<8)#0~8前景号
+    # d=torch.arange(D).repeat(H,W,1).to(semantics.device)*semantics_front
+    # selected = torch.argmax(d, axis=-1)#最高点序号？
+    # sem_front_bev_torch = torch.gather(semantics, dim=2,
+    #                             index=selected.unsqueeze(-1))#最高点语义
+    # front_bev=sem_front_bev_torch.cpu().numpy().squeeze(axis=-1)
+    # objs=dfs_flow(np.concatenate([flow_occ_bev_x,flow_occ_bev_y],axis=-1),front_bev)
+    # # print(objs)
+    # for obj in objs:
+    #     ratio=1024/H
+    #     v_norm=np.linalg.norm(obj['v'])
+    #     vx,vy=obj['v']
+    #     d_arrow=np.array([0.25*vx+30*vx/v_norm,0.25*vy+30*vy/v_norm])
+    #     start_pt,end_pt=(ratio*obj['center']).astype(int), (ratio*(obj['center']+d_arrow)).astype(int)
+    #     # 画v_norm
+    #     cv2.arrowedLine(v_vis_maxthrs[-1],start_pt,end_pt, color=(255,0,0),thickness=2)
+    #     cv2.putText(v_vis_maxthrs[-1],'{:.2f}'.format(v_norm),end_pt,fontFace=cv2.FONT_HERSHEY_SIMPLEX,fontScale=2,color=(255,0,0),thickness=2)
+    #     # 画语义图中arrow
+    #     cv2.arrowedLine(occ_bev_vis,start_pt,end_pt, color=(255,0,0),thickness=2)
+    #     cv2.putText(occ_bev_vis,'{:.2f}'.format(v_norm),end_pt,fontFace=cv2.FONT_HERSHEY_SIMPLEX,fontScale=2,color=(255,0,0),thickness=2)
+
     # flow_occ_bev_x_vis=flow_occ_bev_x/np.max(flow_occ_bev_x+1e-6)*255
     # flow_occ_bev_y_vis=flow_occ_bev_y/np.max(flow_occ_bev_y+1e-6)*255
     # flow_occ_bev_v_vis=flow_occ_bev_v/np.max(flow_occ_bev_v+1e-6)*255
@@ -200,20 +201,20 @@ def vis_bev_view(occ_preds=None,occ_gts=None,flow_preds=None,flow_gts=None,idx=0
     # v_max_thr=torch.max(flow_gts).item()
     occ_gt_vis,flow_gt_vis,flow_gt_vis_mthr=vis_occ(occ_gts[0],flow_gts[0])
     occ_preds_vis,flow_pred_vis,flow_pred_vis_mthr=vis_occ(occ_preds[0],flow_preds[0],v_max_thr=V_MAX_THR)
-    row1=np.concatenate([occ_gt_vis,flow_gt_vis,flowmask_pic],axis=1)
-    row2=np.concatenate([occ_preds_vis,flow_pred_vis,flowmask_pic],axis=1)
-    # row3=np.concatenate([occmask_pic,occ_gt_vis,flow_gt_vis_mthr,flowmask_pic],axis=1)
-    # row4=np.concatenate([occmask_pic,occ_preds_vis,flow_pred_vis_mthr,flowmask_pic],axis=1)
+    # row1=np.concatenate([occ_gt_vis,flow_gt_vis,flowmask_pic],axis=1)
+    # row2=np.concatenate([occ_preds_vis,flow_pred_vis,flowmask_pic],axis=1)
+    row3=np.concatenate([occmask_pic,occ_gt_vis,flow_gt_vis_mthr,flowmask_pic],axis=1)
+    row4=np.concatenate([occmask_pic,occ_preds_vis,flow_pred_vis_mthr,flowmask_pic],axis=1)
     # if row2.shape!=(1024,4096,3) or row1.shape!=(1024,4096,3):
     #     print("!!incorrect vis shape:",idx,"-",row1.shape,row2.shape)
     final_image = np.concatenate([row3,row4], axis=0)
-    # mmcv.imwrite(final_image, os.path.join(save_root+time_str,"%d_0.jpg" % idx))
+    mmcv.imwrite(final_image, os.path.join(save_root+time_str,"%d_0.jpg" % idx))
     # mmcv.imwrite(occ_gt_vis, os.path.join(save_root+time_str,"%d_occgt.jpg" % idx))
     # mmcv.imwrite(occ_preds_vis, os.path.join(save_root+time_str,"%d_occ_pr.jpg" % idx))
     # mmcv.imwrite(flow_gt_vis_mthr[:,-1024:,:], os.path.join(save_root+time_str,"%d_vnorm_gt.jpg" % idx))
     # mmcv.imwrite(flow_pred_vis_mthr[:,-1024:,:], os.path.join(save_root+time_str,"%d_vnorm_pr.jpg" % idx))
-    mmcv.imwrite(row1, os.path.join(save_root+time_str,"%d_gt.jpg" % idx))
-    mmcv.imwrite(row2, os.path.join(save_root+time_str,"%d_pred.jpg" % idx))
+    # mmcv.imwrite(row1, os.path.join(save_root+time_str,"%d_gt.jpg" % idx))
+    # mmcv.imwrite(row2, os.path.join(save_root+time_str,"%d_pred.jpg" % idx))
     pass   
 
 

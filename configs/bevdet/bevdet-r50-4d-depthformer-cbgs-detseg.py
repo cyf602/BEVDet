@@ -73,7 +73,7 @@ data_config = {
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-batch_size=2
+batch_size=4
 bev_embed_dims=256
 # Model
 grid_config = {
@@ -140,7 +140,7 @@ model = dict(
         embed_dims=_dim_,
         encoder=dict(
             type='BEVFormerEncoder',
-            num_layers=1,#3->1
+            num_layers=3,#3->1
             pc_range=[grid_config['x'][0],grid_config['y'][0],grid_config['z'][0],grid_config['x'][1],grid_config['y'][1],grid_config['z'][1]],
             num_points_in_pillar=4,
             return_intermediate=False,
@@ -209,7 +209,7 @@ model = dict(
         map_grid_conf=map_grid_conf,
         in_channels=256,
         pred_det=True,
-        pred_seg=False,
+        pred_seg=True,
         pred_vec=False,
         loss_seg=dict(
                 type='CrossEntropyLoss',
@@ -399,7 +399,7 @@ test_data_config = dict(
 
 data = dict(
     samples_per_gpu=batch_size,
-    workers_per_gpu=4,
+    workers_per_gpu=batch_size,
     shuffle=True,
     train=dict(
         type='CBGSDataset',

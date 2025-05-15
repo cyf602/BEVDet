@@ -266,8 +266,8 @@ def main():
                 eval_kwargs.pop(key, None)
             eval_kwargs.update(dict(metric=args.eval, **kwargs))
             # print(dataset.evaluate(outputs, **eval_kwargs))
-            # dataset.evaluate(outputs, **eval_kwargs)#eval det
-            dataset.evaluate_miou(outputs,show_dir=args.show_dir, **eval_kwargs)#eval occ
+            dataset.evaluate(outputs, **eval_kwargs)#eval det
+            # dataset.evaluate_miou(outputs,show_dir=args.show_dir, **eval_kwargs)#eval occ
 
 
 if __name__ == '__main__':

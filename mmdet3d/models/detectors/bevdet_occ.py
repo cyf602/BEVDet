@@ -33,6 +33,7 @@ class BEVStereo4DOCC(BEVStereo4D):
                  num_extraconv2d=0,
                  flow_bev_encoder_neck=None,#bev fpn处解耦
                  use_flow2d=False,
+                 use_his_flow=False,#上一帧flow
                  **kwargs):
         super(BEVStereo4DOCC, self).__init__(**kwargs)
         self.occupancy_size=[200,200,16]
@@ -291,26 +292,24 @@ class BEVStereo4DOCC(BEVStereo4D):
         else:
             flow_pred=np.zeros((W,H,Z,2),dtype=np.float16)
         #可视化2D #输入torch？
-        if img_feats[0].device==torch.device('cuda:0'):
-            # occ_gt_vis,flow_gt_vis,flow_gt_vis_mthr=vis_occ(voxel_semantics[0][0],voxel_flow[0][0])
-            # occ_preds_vis,flow_pred_vis,flow_pred_vis_mthr=vis_occ(occ_score.argmax(-1)[0],torch.from_numpy(flow_pred).to(img_feats[0].device))
-            occ_preds_vis,flow_pred_vis,flow_pred_vis_mthr=vis_occ(voxel_semantics[0][0],torch.from_numpy(flow_pred).to(img_feats[0].device))
-            # row1=np.concatenate([occ_gt_vis,flow_gt_vis_mthr],axis=1)
-            # row2=np.concatenate([occ_preds_vis,flow_pred_vis_mthr],axis=1)
-        #     # final_image=np.concatenate([row1,row2], axis=0)
-            # cv2.imwrite('vis/test/'+"%d_1.jpg" % self.vis_idx,row2)
-            # cv2.imwrite('vis/test/'+"%d_flowgt.jpg" % self.vis_idx,flow_gt_vis_mthr[:,-1024:,:])
-            # cv2.imwrite('vis/test/'+"%d_semflowgt.jpg" % self.vis_idx,occ_gt_vis)
-            cv2.imwrite('vis/test/'+"%d_flowpr.jpg" % self.vis_idx,flow_pred_vis_mthr[:,-1024:,:])
-            cv2.imwrite('vis/test/'+"%d_semflowpr.jpg" % self.vis_idx,occ_preds_vis)
+        # if self.vis_idx %100==5 and img_feats[0].device==torch.device('cuda:0'):
+        #     # occ_gt_vis,flow_gt_vis,flow_gt_vis_mthr=vis_occ(voxel_semantics[0][0],voxel_flow[0][0])
+        #     # occ_preds_vis,flow_pred_vis,flow_pred_vis_mthr=vis_occ(occ_score.argmax(-1)[0],torch.from_numpy(flow_pred).to(img_feats[0].device))
+        #     occ_preds_vis,flow_pred_vis,flow_pred_vis_mthr=vis_occ(voxel_semantics[0][0],torch.from_numpy(flow_pred).to(img_feats[0].device))
+        #     # row1=np.concatenate([occ_gt_vis,flow_gt_vis_mthr],axis=1)
+        #     # row2=np.concatenate([occ_preds_vis,flow_pred_vis_mthr],axis=1)
+        # #     # final_image=np.concatenate([row1,row2], axis=0)
+        #     # cv2.imwrite('vis/test/'+"%d_1.jpg" % self.vis_idx,row2)
+        #     # cv2.imwrite('vis/test/'+"%d_flowgt.jpg" % self.vis_idx,flow_gt_vis_mthr[:,-1024:,:])
+        #     # cv2.imwrite('vis/test/'+"%d_semflowgt.jpg" % self.vis_idx,occ_gt_vis)
+        #     cv2.imwrite('vis/test/'+"%d_flowpr.jpg" % self.vis_idx,flow_pred_vis_mthr[:,-1024:,:])
+        #     cv2.imwrite('vis/test/'+"%d_semflowpr.jpg" % self.vis_idx,occ_preds_vis)
 
         #可视化3D
         # flow_pred[occgt>8]=0
         # save_occ_bin(occ_res.copy(),flow_pred,idx=self.vis_idx)
         # save_occ_bin(occgt,voxel_flow[0][0].cpu().numpy(),save_root='vis/vis_occ_gt',idx=self.vis_idx)
         self.vis_idx+=1
-        if  self.vis_idx>105:
-            print('105+')
         return [{'occ_results':occ_res,'flow_results':flow_pred}]
 
     def forward_train(self,

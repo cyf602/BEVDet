@@ -298,7 +298,7 @@ runner = dict(type='EpochBasedRunner', max_epochs=30)
 #         priority='NORMAL',
 #     ),
 # ]
-resume_from="work_dirs/bevdepthocc_pretrainseg2d_yolopsegep5_408/epoch_24.pth"
+# resume_from="work_dirs/bevdepthocc_pretrainseg2d_yolopsegep5_408/epoch_24.pth"
 # resume_from="work_dirs/bevdepthocc-0207/epoch_6.pth"
 # fp16 = dict(loss_scale='dynamic')
 # load_from="work_dirs/seg2d-depth_yolohead_wdecay1e-2_0408/epoch_1_fitted.pth"
