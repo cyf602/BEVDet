@@ -86,6 +86,9 @@ class BEVStereo4DOCC(BEVStereo4D):
                                 padding=1,
                                 bias=True,
                                 conv_cfg=dict(type='Conv3d'))
+            if use_his_flow:
+                self.use_his_flow=use_his_flow
+                self.last_flow=None
         occ_conv2ds,flow_conv2ds=[],[]
         for i in range(self.num_extraconv2d):
             occ_conv2ds.append(

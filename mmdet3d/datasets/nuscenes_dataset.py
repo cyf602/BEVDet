@@ -239,7 +239,7 @@ class NuScenesDataset(Custom3DDataset):
         """
         data = mmcv.load(ann_file, file_format='pkl')
         data_infos = list(sorted(data['infos'], key=lambda e: e['timestamp']))
-        data_infos = data_infos[::self.load_interval][:100]#[::2]
+        data_infos = data_infos[::self.load_interval]#[:50]#[::2]
         self.metadata = data['metadata']
         self.version = self.metadata['version']
         stamps=[data_info['timestamp']/1e6 for data_info in data_infos]
@@ -508,44 +508,39 @@ class NuScenesDataset(Custom3DDataset):
         """
         Set each sequence to be a different group
         """
-        if self.seq_split_num == -1:
-            self.flag = np.arange(len(self.data_infos))
-            return
-        
         res = []
-        cur_scene_name=""
-        curr_sequence = -1
+
+        curr_sequence = 0
         for idx in range(len(self.data_infos)):
-            if self.data_infos[idx]['scene_name'] != cur_scene_name:
-                # new sequence
+            if idx != 0 and len(self.data_infos[idx]['sweeps']) == 0:
+                # Not first frame and # of sweeps is 0 -> new sequence
                 curr_sequence += 1
-                cur_scene_name=self.data_infos[idx]['scene_name']
             res.append(curr_sequence)
 
         self.flag = np.array(res, dtype=np.int64)
 
-        if self.seq_split_num != 1:#1
-            bin_counts = np.bincount(self.flag)
-            new_flags = []
-            curr_new_flag = 0
-            for curr_flag in range(len(bin_counts)):
-                seq_length = int(round(bin_counts[curr_flag] / self.seq_split_num))
-                curr_sequence_length = list(range(0, bin_counts[curr_flag], seq_length)) + [bin_counts[curr_flag]]
-                
-                # if left one sample, put it into the last sequence
-                if curr_sequence_length[-1] - curr_sequence_length[-2] <= 1:
-                    curr_sequence_length = curr_sequence_length[:-2] + [curr_sequence_length[-1]]
-                
-                curr_sequence_length = np.array(curr_sequence_length)
+        if self.sequences_split_num != 1:
+            if self.sequences_split_num == 'all':
+                self.flag = np.array(range(len(self.data_infos)), dtype=np.int64)
+            else:
+                bin_counts = np.bincount(self.flag)
+                new_flags = []
+                curr_new_flag = 0
+                for curr_flag in range(len(bin_counts)):
+                    curr_sequence_length = np.array(
+                        list(range(0, 
+                                bin_counts[curr_flag], 
+                                math.ceil(bin_counts[curr_flag] / self.sequences_split_num)))
+                        + [bin_counts[curr_flag]])
 
-                for sub_seq_idx in (curr_sequence_length[1:] - curr_sequence_length[:-1]):
-                    for _ in range(sub_seq_idx):
-                        new_flags.append(curr_new_flag)
-                    curr_new_flag += 1
+                    for sub_seq_idx in (curr_sequence_length[1:] - curr_sequence_length[:-1]):
+                        for _ in range(sub_seq_idx):
+                            new_flags.append(curr_new_flag)
+                        curr_new_flag += 1
 
-            assert len(new_flags) == len(self.flag)
-            # assert len(np.bincount(new_flags)) == len(np.bincount(self.flag)) * self.seq_split_num
-            self.flag = np.array(new_flags, dtype=np.int64)
+                assert len(new_flags) == len(self.flag)
+                assert len(np.bincount(new_flags)) == len(np.bincount(self.flag)) * self.sequences_split_num
+                self.flag = np.array(new_flags, dtype=np.int64)
             
     def _evaluate_single(self,
                          result_path,

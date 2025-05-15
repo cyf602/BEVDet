@@ -1,0 +1,329 @@
+# Copyright (c) Phigent Robotics. All rights reserved.
+
+# align_after_view_transfromation=False
+# ===> per class IoU of 6019 samples:
+# ===> others - IoU = 8.22
+# ===> barrier - IoU = 44.21
+# ===> bicycle - IoU = 10.34
+# ===> bus - IoU = 42.08
+# ===> car - IoU = 49.63
+# ===> construction_vehicle - IoU = 23.37
+# ===> motorcycle - IoU = 17.41
+# ===> pedestrian - IoU = 21.49
+# ===> traffic_cone - IoU = 19.7
+# ===> trailer - IoU = 31.33
+# ===> truck - IoU = 37.09
+# ===> driveable_surface - IoU = 80.13
+# ===> other_flat - IoU = 37.37
+# ===> sidewalk - IoU = 50.41
+# ===> terrain - IoU = 54.29
+# ===> manmade - IoU = 45.56
+# ===> vegetation - IoU = 39.59
+# ===> mIoU of 6019 samples: 36.01
+
+
+_base_ = ['../_base_/datasets/nus-3d.py', '../_base_/default_runtime.py']
+# Global
+# For nuScenes we usually do 10-class detection
+class_names = [
+    'car', 'truck', 'construction_vehicle', 'bus', 'trailer', 'barrier',
+    'motorcycle', 'bicycle', 'pedestrian', 'traffic_cone'
+]
+# For OpenOcc v2 we have 17 classes (including `free`)
+occ_class_names = [
+    'car', 'truck', 'trailer', 'bus', 'construction_vehicle',
+    'bicycle', 'motorcycle', 'pedestrian', 'traffic_cone', 'barrier',
+    'driveable_surface', 'other_flat', 'sidewalk',
+    'terrain', 'manmade', 'vegetation', 'free'
+]
+data_config = {
+    'cams': [
+        'CAM_FRONT_LEFT', 'CAM_FRONT', 'CAM_FRONT_RIGHT', 'CAM_BACK_LEFT',
+        'CAM_BACK', 'CAM_BACK_RIGHT'
+    ],
+    'Ncams':
+    6,
+    'input_size': (256, 704),
+    'src_size': (900, 1600),
+
+    # Augmentation
+    'resize': (-0.06, 0.11),
+    'rot': (-5.4, 5.4),
+    'flip': True,
+    'crop_h': (0.0, 0.0),
+    'resize_test': 0.00,
+}
+num_epochs=20
+batch_size=1
+num_gpus=1
+num_iters_per_epoch = 123584 // (num_gpus * batch_size)#cgbs
+# num_iters_per_epoch = 28130 // (num_gpus * batch_size)
+# num_iters_per_epoch = 101 // (num_gpus * batch_size)
+total_iters= num_epochs * num_iters_per_epoch
+bev_embed_dims=256
+# Model
+grid_config = {
+    'x': [-40, 40, 0.4],
+    'y': [-40, 40, 0.4],
+    'z': [-1, 5.4, 0.4],
+    'depth': [1.0, 45.0, 0.5],#0.25->10g/bs
+}
+occupancy_size=[200,200,16]
+#for former encoder
+pc_range=[grid_config['x'][0],grid_config['y'][0],grid_config['z'][0],grid_config['x'][1],grid_config['y'][1],grid_config['z'][1]]
+_dim_ = 256
+_pos_dim_ = _dim_//2
+_ffn_dim_ = _dim_*2
+# voxel_size = [0.1, 0.1, 0.2]
+
+numC_Trans = 32
+
+multi_adj_frame_id_cfg = (1, 2+1, 1)
+batch_size=1
+model = dict(
+    type='BEVDepth4DOCC',
+    align_after_view_transfromation=False,
+    num_adj=len(range(*multi_adj_frame_id_cfg)),
+    num_extraconv2d=0,#conv2d nums in head
+    pred_flow=True,
+    pred_occ=True,
+    use_flow2d=False,
+    img_backbone=dict(
+        # pretrained='torchvision://resnet50',
+        # pretrained='ckpts/resnet101-5d3b4d8f.pth',
+        type='ResNet',
+        depth=101,
+        num_stages=4,
+        out_indices=(1,2, 3),#需同时更改fpn inchannel;lss downsample
+        frozen_stages=-1,
+        norm_cfg=dict(type='BN', requires_grad=True),
+        norm_eval=False,
+        with_cp=True,
+        style='pytorch'),
+    img_neck=dict(
+        type='CustomFPN',
+        in_channels=[512,1024, 2048],
+        out_channels=256,
+        num_outs=1,
+        start_level=0,
+        out_ids=[0]),
+    img_view_transformer=dict(
+        type='LSSViewTransformerBEVDepth',
+        grid_config=grid_config,
+        input_size=data_config['input_size'],
+        in_channels=256,
+        out_channels=numC_Trans,
+        collapse_z=False,
+        depthnet_cfg=dict(use_dcn=False, aspp_mid_channels=96),
+        loss_depth_weight=0.25,
+        downsample=8),
+    # img_bev_encoder_backbone=dict(
+    #     type='CustomResNet3D',
+    #     numC_input=numC_Trans * (len(range(*multi_adj_frame_id_cfg))+2),
+    #     num_layer=[1, 2, 4],
+    #     with_cp=False,
+    #     num_channels=[numC_Trans,numC_Trans*2,numC_Trans*4],
+    #     stride=[1,2,2],
+    #     backbone_output_ids=[0,1,2]),
+    img_bev_encoder_backbone=dict(
+        type='CustomResNet3D',
+        numC_input=numC_Trans * (len(range(*multi_adj_frame_id_cfg))+1),
+        num_layer=[1, 2, 4],
+        with_cp=False,
+        num_channels=[numC_Trans,numC_Trans*2,numC_Trans*4],
+        stride=[1,2,2],
+        backbone_output_ids=[0,1,2]),
+    img_bev_encoder_neck=dict(type='LSSFPN3D',
+                              in_channels=numC_Trans*7,
+                              out_channels=numC_Trans),
+    flow_bev_encoder_neck=dict(type='LSSFPN3D',
+                              in_channels=numC_Trans*7,
+                              out_channels=numC_Trans),
+    pre_process=dict(
+        type='CustomResNet3D',
+        numC_input=numC_Trans,
+        with_cp=False,
+        num_layer=[1,],
+        num_channels=[numC_Trans,],
+        stride=[1,],
+        backbone_output_ids=[0,]),
+    loss_occ=dict(
+        type='CrossEntropyLoss',
+        use_sigmoid=False,
+        loss_weight=1.0),#class_weight=[0.3, 2.0, 2.0, 2.0]
+    # loss_occ=dict(
+    #         type='FocalLoss',
+    #         use_sigmoid=True,
+    #         gamma=2.0,
+    #         alpha=0.25,
+    #         loss_weight=10.0),
+    # loss_occ=dict(type='CustomFocalLoss'),
+    loss_flow=dict(type='L1Loss', loss_weight=0.25),
+    use_mask=True,
+)
+# Data
+dataset_type = 'NuScenesDatasetOccpancyv2'
+# dataset_type = 'TemporalNuSceneOcc'
+data_root = 'data/nuscenes/'
+file_client_args = dict(backend='disk')
+
+bda_aug_conf = dict(
+    rot_lim=(-0., 0.),
+    scale_lim=(1., 1.),
+    flip_dx_ratio=0.5,
+    flip_dy_ratio=0.5)
+
+train_pipeline = [
+    dict(
+        type='PrepareImageInputs',
+        is_train=True,
+        data_config=data_config,
+        sequential=True),
+    dict(type='LoadOccGTFromFilev2'),
+    # dict(type='LoadTempOccGTFromFile'),
+    dict(type='LoadAnnotations'),
+    dict(
+        type='BEVAugv2',
+        bda_aug_conf=bda_aug_conf,
+        classes=class_names),
+    dict(
+        type='LoadPointsFromFile',
+        coord_type='LIDAR',
+        load_dim=5,
+        use_dim=5,
+        file_client_args=file_client_args),
+    dict(type='PointToMultiViewDepth', downsample=1, grid_config=grid_config),
+    dict(type='DefaultFormatBundle3D', class_names=class_names),
+    dict(
+        type='Collect3D', keys=['img_inputs', 'gt_depth', 'voxel_semantics',#'next_voxel_semantics',
+                                'voxel_flow','vismask','voxel_flow2d','dstamp','ego2next_mat','scene_name'],
+                                meta_keys=('scene_name','box_mode_3d','box_type_3d','sample_idx'))
+]
+
+test_pipeline = [
+    dict(type='PrepareImageInputs', data_config=data_config, sequential=True),
+    dict(type='LoadOccGTFromFilev2'),#用于save_occ_bin出图
+    dict(type='LoadAnnotations'),
+    dict(type='BEVAugv2',
+         bda_aug_conf=bda_aug_conf,
+         classes=class_names,
+         is_train=False),
+    dict(
+        type='LoadPointsFromFile',
+        coord_type='LIDAR',
+        load_dim=5,
+        use_dim=5,
+        file_client_args=file_client_args),
+    dict(
+        type='MultiScaleFlipAug3D',
+        img_scale=(1333, 800),
+        pts_scale_ratio=1,
+        flip=False,
+        transforms=[
+            dict(
+                type='DefaultFormatBundle3D',
+                class_names=class_names,
+                with_label=False),
+            dict(type='Collect3D', keys=['points', 'img_inputs',
+                'voxel_semantics','voxel_flow'])
+        ])
+]
+
+input_modality = dict(
+    use_lidar=False,
+    use_camera=True,
+    use_radar=False,
+    use_map=False,
+    use_external=False)
+
+share_data_config = dict(
+    type=dataset_type,
+    classes=class_names,
+    modality=input_modality,
+    filter_empty_gt=False,
+    img_info_prototype='bevdet4d',
+    multi_adj_frame_id_cfg=multi_adj_frame_id_cfg,
+)
+
+test_data_config = dict(
+    pipeline=test_pipeline,
+    ann_file=data_root + 'bevdetv3-nuscenes_infos_val.pkl')
+
+data = dict(
+    samples_per_gpu=batch_size,
+    workers_per_gpu=batch_size,
+    # train=dict(
+    #     type='CBGSDataset',
+    #     dataset=dict(
+    #     data_root=data_root,
+    #     ann_file=data_root + 'bevdetv3-nuscenes_infos_train.pkl',
+    #     pipeline=train_pipeline,
+    #     classes=class_names,
+    #     test_mode=False,
+    #     use_valid_flag=True,
+        # we use box_type_3d='LiDAR' in kitti and nuscenes dataset
+        # and box_type_3d='Depth' in sunrgbd and scannet dataset.
+        # box_type_3d='LiDAR')),
+    train=dict(
+        data_root=data_root,
+        ann_file=data_root + 'bevdetv3-nuscenes_infos_train.pkl',
+        pipeline=train_pipeline,
+        classes=class_names,
+        test_mode=False,
+        use_valid_flag=True,
+        # we use box_type_3d='LiDAR' in kitti and nuscenes dataset
+        # and box_type_3d='Depth' in sunrgbd and scannet dataset.
+        box_type_3d='LiDAR'),
+    val=test_data_config,
+    test=test_data_config,
+    shuffler_sampler=dict(
+        type='InfiniteGroupEachSampleInBatchSampler',
+        seq_split_num=2,
+        num_iters_to_seq=5*num_iters_per_epoch,
+        random_drop=0.0,
+        cbgs=True
+    ),
+    nonshuffler_sampler=dict(type='DistributedSampler')
+)
+
+for key in ['val', 'test']:
+    data[key].update(share_data_config)
+# data['train']['dataset'].update(share_data_config)#cbgs
+data['train'].update(share_data_config)
+# env_cfg = dict(
+#     cudnn_benchmark=False,
+#     mp_cfg=dict(mp_start_method='fork', opencv_num_threads=0),
+#     dist_cfg=dict(backend='nccl',timeout=10800),
+# )
+# Optimizer
+optimizer = dict(type='AdamW', lr=1e-4, weight_decay=1e-2)
+optimizer_config = dict(grad_clip=dict(max_norm=5, norm_type=2))
+# lr_config = dict(
+#     policy='step',
+#     warmup='linear',
+#     warmup_iters=200,
+#     warmup_ratio=0.001,
+#     step=[22,27])
+lr_config = dict(
+    policy='CosineAnnealing',
+    warmup='linear',
+    warmup_iters=500,
+    warmup_ratio=1.0 / 3,
+    min_lr_ratio=1e-3)
+checkpoint_config = dict(interval=num_iters_per_epoch)
+evaluation = dict(interval=num_iters_per_epoch, pipeline=test_pipeline)
+# runner = dict(type='EpochBasedRunner', max_epochs=30)
+runner = dict(type='IterBasedRunner', max_iters=num_epochs * num_iters_per_epoch)
+
+# custom_hooks = [
+#     dict(
+#         type='MEGVIIEMAHook',
+#         init_updates=10560,
+#         priority='NORMAL',
+#     ),
+# ]
+# resume_from="work_dirs/bevdepthocc_pretrainseg2d_yolopsegep5_408/epoch_24.pth"
+# resume_from="work_dirs/bevdepthocc-0207/epoch_6.pth"
+# fp16 = dict(loss_scale='dynamic')
+# load_from="work_dirs/seg2d-depth_yolohead_wdecay1e-2_0408/epoch_1_fitted.pth"
+# load_from="ckpts/occ-base-ep30.pth"
