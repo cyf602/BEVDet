@@ -76,13 +76,15 @@ def main():
     # benchmark with several samples and take the average
     for i, data in enumerate(data_loader):
         inputs = [d.cuda() for d in data['img_inputs'][0]]
+        torch.cuda.synchronize()
+        start_time = time.perf_counter()
         with torch.no_grad():
             feat_prev, inputs = model.module.extract_img_feat(
                 inputs, pred_prev=True, img_metas=None)
         data['img_inputs'][0] = inputs
 
-        torch.cuda.synchronize()
-        start_time = time.perf_counter()
+        # torch.cuda.synchronize()
+        # start_time = time.perf_counter()
 
         with torch.no_grad():
             model(
