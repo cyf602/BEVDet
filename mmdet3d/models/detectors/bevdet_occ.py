@@ -11,11 +11,12 @@ import numpy as np
 from mmdet3d.models.builder import build_neck
 from mmdet.models.losses import FocalLoss
 from mmdet3d.models.occ_loss_utils import CustomFocalLoss
-
+from mmdet3d.models.backbones.swin import SwinBlockSequence
 from mmcv.cnn.bricks.transformer import build_transformer_layer_sequence
 from mmdet.models.utils import build_transformer
 from mmcv.cnn.bricks.transformer import build_positional_encoding
 import cv2
+import torch.nn.functional as F
 @DETECTORS.register_module()
 class BEVStereo4DOCC(BEVStereo4D):
 
@@ -34,6 +35,7 @@ class BEVStereo4DOCC(BEVStereo4D):
                  flow_bev_encoder_neck=None,#bev fpn处解耦
                  use_flow2d=False,
                  use_his_flow=False,#上一帧flow
+                 flow_cross_cfg=None,#flow
                  **kwargs):
         super(BEVStereo4DOCC, self).__init__(**kwargs)
         self.occupancy_size=[200,200,16]
@@ -86,9 +88,6 @@ class BEVStereo4DOCC(BEVStereo4D):
                                 padding=1,
                                 bias=True,
                                 conv_cfg=dict(type='Conv3d'))
-            if use_his_flow:
-                self.use_his_flow=use_his_flow
-                self.last_flow=None
         occ_conv2ds,flow_conv2ds=[],[]
         for i in range(self.num_extraconv2d):
             occ_conv2ds.append(
@@ -134,13 +133,23 @@ class BEVStereo4DOCC(BEVStereo4D):
                 #         nn.Linear(self.out_dim*2, num_classes),
                 #     )
             if pred_flow:
-                self.flow_predicter = nn.Sequential(
-                    nn.Linear(self.out_dim, self.out_dim*2),
-                    nn.ReLU(),
-                    nn.Linear(self.out_dim*2, self.out_dim*2),
-                    nn.ReLU(),
-                    nn.Linear(self.out_dim*2, 2),
-                )
+                # flow_predicter_in_dim = self.out_dim*2  if (use_his_flow and flow_cross_cfg["type"]=="swin") else self.out_dim
+                if use_his_flow and flow_cross_cfg["type"]=="swin":
+                    flow_predicter_in_dim = self.out_dim#*2
+                    self.flow_predicter = nn.Sequential(
+                        nn.Linear(flow_predicter_in_dim, self.out_dim),
+                        nn.ReLU(),
+                        nn.Linear(self.out_dim, 2),
+                    )
+                else:
+                    flow_predicter_in_dim = self.out_dim
+                    self.flow_predicter = nn.Sequential(
+                        nn.Linear(flow_predicter_in_dim, self.out_dim*2),
+                        nn.ReLU(),
+                        nn.Linear(self.out_dim*2, self.out_dim*2),
+                        nn.ReLU(),
+                        nn.Linear(self.out_dim*2, 2),
+                    )
         if pred_flow and pred_occ and flow_bev_encoder_neck:
             self.flow_bev_encoder_neck = build_neck(flow_bev_encoder_neck)
         self.pts_bbox_head = None
@@ -165,7 +174,29 @@ class BEVStereo4DOCC(BEVStereo4D):
         ys=torch.linspace(grid_cfg['y'][0]+grid_cfg['y'][2]/2,grid_cfg['y'][1]-grid_cfg['y'][2]/2,Y).view(1,Y,1).expand(X,Y,Z)#200
         zs=torch.linspace(grid_cfg['z'][0]+grid_cfg['z'][2]/2,grid_cfg['z'][1]-grid_cfg['z'][2]/2,Z).view(1,1,Z).expand(X,Y,Z)#16
         self.local_voxel_coors=torch.stack((xs,ys,zs),-1).double().repeat(1,1,1,1,1)#para1:batch size=1
-
+        self.use_his_flow=use_his_flow
+        if pred_flow and use_his_flow:
+            self.last_flow=None
+            self.last_loc=None
+            self.last_scene=None
+            if flow_cross_cfg:
+                self.flowcrosstype=flow_cross_cfg.pop('type')
+                if  self.flowcrosstype=="swin":#显存极大
+                    self.flowcross = SwinBlockSequence(**flow_cross_cfg)
+                    self.swin_extra_conv=ConvModule(self.out_dim*2,self.out_dim,3,padding=1)#c:64->32
+                elif self.flowcrosstype=="deconv":
+                    n_layers=flow_cross_cfg.pop('n_layers')
+                    blocks=nn.ModuleList()
+                    for i in range(n_layers-1):
+                        block=ConvModule(**flow_cross_cfg)
+                        blocks.append(block)
+                    flow_cross_cfg['out_channels']=flow_predicter_in_dim
+                    blocks.append(ConvModule(**flow_cross_cfg))
+                    self.flowcross = nn.Sequential(*blocks)
+            else:self.flowcrosstype=None
+            grid_x, grid_y = torch.meshgrid(torch.arange(X), torch.arange(Y), indexing='xy')
+            self.loc2d=torch.stack([grid_x,grid_y,torch.ones_like(grid_x)],dim=-1).to(torch.float).view(1,X,Y,3,1)
+            # self.grid3d=
     def loss_single(self,voxel_semantics,preds_occ,voxel_flow,preds_flow=None,
                     mask_camera=None):
         loss_ = dict()
@@ -207,11 +238,11 @@ class BEVStereo4DOCC(BEVStereo4D):
                 mask_camera = mask_camera.to(torch.int32)
                 voxel_semantics=voxel_semantics.reshape(-1)
                 preds_occ=preds_occ.reshape(-1,self.out_occ_dim)
-                rand_tensor=torch.rand(voxel_semantics.shape,device=voxel_flow.device)
-                rand_mask=torch.logical_or(torch.logical_and((rand_tensor<0.33),free),~free)#20%free和全部nonfree
-                occmask=torch.logical_and(mask_camera.view(-1),rand_mask)
-                # occmask=mask_camera.view(-1).to(bool)
-                num_total_samples=occmask.sum()#visable_mask
+                # rand_tensor=torch.rand(voxel_semantics.shape,device=voxel_flow.device)
+                # rand_mask=torch.logical_or(torch.logical_and((rand_tensor<0.33),free),~free)#20%free和全部nonfree；避免加盖现象
+                # occmask=torch.logical_and(mask_camera.view(-1),rand_mask)
+                occmask=mask_camera.view(-1).to(bool)
+                num_total_samples=mask_camera.sum()#visable_mask
                 loss_occ=self.loss_occ(preds_occ,voxel_semantics,occmask, avg_factor=num_total_samples)
                 loss_['loss_occ'] = loss_occ
             else:
@@ -280,6 +311,37 @@ class BEVStereo4DOCC(BEVStereo4D):
                 _flow_pred=self.flow_conv(_flow_pred).reshape(B,C,-1,H,W)
             else:
                 _flow_pred = self.flow_conv(img_feats[-1])#[B,32,16,200,200]
+            if self.use_his_flow:
+                scene_num=kwargs['scene_num']
+                e2g3d=kwargs['e2g_mat']
+                e2g2d=torch.eye(3).unsqueeze(0).repeat(B,1,1).to(e2g3d.device)
+                e2g2d[:,:2,:2]=e2g3d[:,:2,:2]
+                e2g2d[:,:-1,-1]=e2g3d[:,:-2,-1]
+                if self.last_scene is None:
+                    same_scene=torch.zeros_like(scene_num).bool()
+                    _flow_last_sampled=  torch.zeros_like(_flow_pred)
+                else:
+                    same_scene=scene_num==self.last_scene
+                    self.last_flow[~same_scene]=torch.zeros_like(_flow_pred[0])
+
+                    # grid
+                    cur2past=(torch.inverse(e2g2d)@self.last_loc).unsqueeze(1).unsqueeze(1)#[B,1,1,3,3]
+                    pastloc=(cur2past@self.loc2d.to(e2g3d.device)).squeeze(-1)[...,:2].repeat(Z,1,1,1)#B,1,1,3,3 x B w h 3 1 ->Bwh3(1)->(BZ)wh2
+                    _flow_last_sampled=F.grid_sample(self.last_flow.permute(0,2,1,3,4).reshape(B*Z,-1,H,W),pastloc).reshape(B,Z,-1,H,W).transpose(1,2)#to bczhw
+                _flow_pred=torch.cat([_flow_pred,_flow_last_sampled],dim=1)
+                self.last_scene=scene_num
+                if self.flowcrosstype=="swin":
+                    _flow_pred=_flow_pred.permute(0,2,3,4,1).reshape(B*Z,H*W,-1)#BCZHW->(BZ)(HW)C
+                    _flow_pred=self.flowcross(_flow_pred,(H,W))#[B*Z,H*W,C]
+                    _flow_pred=_flow_pred[0].reshape(B*Z,H,W,-1).permute(0,3,1,2)#(BZ)CHW
+                    _flow_pred=self.swin_extra_conv(_flow_pred)
+                    _flow_pred=_flow_pred.reshape(B,Z,-1,H,W).transpose(1,2)
+                elif self.flowcrosstype=="deconv":
+                    _flow_pred=_flow_pred.transpose(1,2).flatten(0,1)#BCZHW->
+                    _flow_pred=self.flowcross(_flow_pred)
+                    _flow_pred=_flow_pred.reshape(B,Z,-1,H,W).transpose(1,2)
+                self.last_flow=_flow_pred.detach().clone()
+                self.last_loc=e2g2d
             if self.num_extraconv2d>0:
                 _flow_pred=_flow_pred.transpose(1,2).reshape(-1,C,H,W)
                 _flow_pred=self.flow_conv2ds(_flow_pred)
@@ -381,6 +443,37 @@ class BEVStereo4DOCC(BEVStereo4D):
                 _flow_pred = self.flow_conv(img_feats[-1])#[B,32,16,200,200]
             # B,C,Z,H,W=_flow_pred.shape 
             #[B*d,C(32),H,W]
+            if self.use_his_flow:
+                scene_num=kwargs['scene_num']
+                e2g3d=kwargs['e2g_mat']
+                e2g2d=torch.eye(3).unsqueeze(0).repeat(B,1,1).to(e2g3d.device)
+                e2g2d[:,:2,:2]=e2g3d[:,:2,:2]
+                e2g2d[:,:-1,-1]=e2g3d[:,:-2,-1]
+                if self.last_scene is None:
+                    same_scene=torch.zeros_like(scene_num).bool()
+                    _flow_last_sampled=  torch.zeros_like(_flow_pred)
+                else:
+                    same_scene=scene_num==self.last_scene
+                    self.last_flow[~same_scene]=torch.zeros_like(_flow_pred[0])
+
+                    # grid
+                    cur2past=(torch.inverse(e2g2d)@self.last_loc).unsqueeze(1).unsqueeze(1)#[B,1,1,3,3]
+                    pastloc=(cur2past@self.loc2d.to(e2g3d.device)).squeeze(-1)[...,:2].repeat(Z,1,1,1)#B,1,1,3,3 x B w h 3 1 ->Bwh3(1)->(BZ)wh2
+                    _flow_last_sampled=F.grid_sample(self.last_flow.permute(0,2,1,3,4).reshape(B*Z,-1,H,W),pastloc).reshape(B,Z,-1,H,W).transpose(1,2)#to bczhw
+                _flow_pred=torch.cat([_flow_pred,_flow_last_sampled],dim=1)
+                self.last_scene=scene_num
+                if self.flowcrosstype=="swin":
+                    _flow_pred=_flow_pred.permute(0,2,3,4,1).reshape(B*Z,H*W,-1)#BCZHW->(BZ)(HW)C
+                    _flow_pred=self.flowcross(_flow_pred,(H,W))#[B*Z,H*W,C]
+                    _flow_pred=_flow_pred[0].reshape(B*Z,H,W,-1).permute(0,3,1,2)#(BZ)CHW
+                    _flow_pred=self.swin_extra_conv(_flow_pred)
+                    _flow_pred=_flow_pred.reshape(B,Z,-1,H,W).transpose(1,2)
+                elif self.flowcrosstype=="deconv":
+                    _flow_pred=_flow_pred.transpose(1,2).flatten(0,1)#BCZHW->
+                    _flow_pred=self.flowcross(_flow_pred)
+                    _flow_pred=_flow_pred.reshape(B,Z,-1,H,W).transpose(1,2)
+                self.last_flow=_flow_pred.detach().clone()
+                self.last_loc=e2g2d
             if self.num_extraconv2d>0:#额外添加两层conv2d，用处不大
                 _flow_pred=_flow_pred.transpose(1,2).reshape(-1,C,H,W)
                 _flow_pred=self.flow_conv2ds(_flow_pred)

@@ -53,11 +53,11 @@ data_config = {
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-num_epochs=20
-batch_size=1
-num_gpus=1
-num_iters_per_epoch = 123584 // (num_gpus * batch_size)#cgbs
-# num_iters_per_epoch = 28130 // (num_gpus * batch_size)
+num_epochs=30
+batch_size=2
+num_gpus=4
+# num_iters_per_epoch = 123584 // (num_gpus * batch_size)#cgbs
+num_iters_per_epoch = 28130 // (num_gpus * batch_size)
 # num_iters_per_epoch = 101 // (num_gpus * batch_size)
 total_iters= num_epochs * num_iters_per_epoch
 bev_embed_dims=256
@@ -79,7 +79,6 @@ _ffn_dim_ = _dim_*2
 numC_Trans = 32
 
 multi_adj_frame_id_cfg = (1, 2+1, 1)
-batch_size=1
 model = dict(
     type='BEVDepth4DOCC',
     align_after_view_transfromation=False,
@@ -88,9 +87,10 @@ model = dict(
     pred_flow=True,
     pred_occ=True,
     use_flow2d=False,
+    use_his_flow=True,
     img_backbone=dict(
         # pretrained='torchvision://resnet50',
-        # pretrained='ckpts/resnet101-5d3b4d8f.pth',
+        pretrained='ckpts/resnet101-5d3b4d8f.pth',
         type='ResNet',
         depth=101,
         num_stages=4,
@@ -147,6 +147,25 @@ model = dict(
         num_channels=[numC_Trans,],
         stride=[1,],
         backbone_output_ids=[0,]),
+    flow_cross_cfg=dict(
+        type="swin",
+        embed_dims=64,
+        feedforward_channels=64,#ffn隐藏层
+        window_size=8,#12
+        num_heads=4,
+        depth=2,#block数量
+        # drop_path_rate=0.,#随机深度
+    ),
+    # flow_cross_cfg=dict(
+    #     type="deconv",
+    #     in_channels=64,
+    #     out_channels=64,
+    #     kernel_size=3,
+    #     norm_cfg=dict(type='BN', requires_grad=True),
+    #     conv_cfg = dict(type='DCNv2'),
+    #     n_layers=2,#最后一层调整通道数
+    #     padding=1,
+    # ),
     loss_occ=dict(
         type='CrossEntropyLoss',
         use_sigmoid=False,
@@ -195,8 +214,8 @@ train_pipeline = [
     dict(type='PointToMultiViewDepth', downsample=1, grid_config=grid_config),
     dict(type='DefaultFormatBundle3D', class_names=class_names),
     dict(
-        type='Collect3D', keys=['img_inputs', 'gt_depth', 'voxel_semantics',#'next_voxel_semantics',
-                                'voxel_flow','vismask','voxel_flow2d','dstamp','ego2next_mat','scene_name'],
+        type='Collect3D', keys=['img_inputs', 'gt_depth', 'voxel_semantics','timestamp',#'next_voxel_semantics',
+                                'voxel_flow','vismask','voxel_flow2d','dstamp','e2g_mat','scene_num'],
                                 meta_keys=('scene_name','box_mode_3d','box_type_3d','sample_idx'))
 ]
 
@@ -225,7 +244,7 @@ test_pipeline = [
                 class_names=class_names,
                 with_label=False),
             dict(type='Collect3D', keys=['points', 'img_inputs',
-                'voxel_semantics','voxel_flow'])
+                'voxel_semantics','voxel_flow','scene_num'])
         ])
 ]
 
@@ -271,6 +290,7 @@ data = dict(
         classes=class_names,
         test_mode=False,
         use_valid_flag=True,
+        seq_split_num=4,#iter
         # we use box_type_3d='LiDAR' in kitti and nuscenes dataset
         # and box_type_3d='Depth' in sunrgbd and scannet dataset.
         box_type_3d='LiDAR'),
@@ -278,10 +298,8 @@ data = dict(
     test=test_data_config,
     shuffler_sampler=dict(
         type='InfiniteGroupEachSampleInBatchSampler',
-        seq_split_num=2,
-        num_iters_to_seq=5*num_iters_per_epoch,
-        random_drop=0.0,
-        cbgs=True
+        # num_iters_to_seq=5*num_iters_per_epoch,
+        # random_drop=0.0
     ),
     nonshuffler_sampler=dict(type='DistributedSampler')
 )
@@ -298,22 +316,26 @@ data['train'].update(share_data_config)
 # Optimizer
 optimizer = dict(type='AdamW', lr=1e-4, weight_decay=1e-2)
 optimizer_config = dict(grad_clip=dict(max_norm=5, norm_type=2))
-# lr_config = dict(
-#     policy='step',
-#     warmup='linear',
-#     warmup_iters=200,
-#     warmup_ratio=0.001,
-#     step=[22,27])
 lr_config = dict(
-    policy='CosineAnnealing',
+    policy='step',
     warmup='linear',
-    warmup_iters=500,
-    warmup_ratio=1.0 / 3,
-    min_lr_ratio=1e-3)
+    warmup_iters=200,
+    warmup_ratio=0.001,
+    step=[22*num_iters_per_epoch,27*num_iters_per_epoch],
+    )
+# lr_config = dict(
+#     policy='CosineAnnealing',
+#     warmup='linear',
+#     warmup_iters=500,
+#     warmup_ratio=1.0 / 3,
+#     min_lr_ratio=1e-3)
 checkpoint_config = dict(interval=num_iters_per_epoch)
-evaluation = dict(interval=num_iters_per_epoch, pipeline=test_pipeline)
-# runner = dict(type='EpochBasedRunner', max_epochs=30)
+evaluation = dict(interval=num_iters_per_epoch*60, pipeline=test_pipeline,tmpdir="/root/autodl-tmp/eval_tmp_dir")
 runner = dict(type='IterBasedRunner', max_iters=num_epochs * num_iters_per_epoch)
+
+# checkpoint_config = dict(interval=1)
+# evaluation = dict(interval=12, pipeline=test_pipeline)
+# runner = dict(type='EpochBasedRunner', max_epochs=30)
 
 # custom_hooks = [
 #     dict(

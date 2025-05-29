@@ -68,13 +68,13 @@ data_config = {
 
     # Augmentation
     'resize': (-0.06, 0.11),
-    'rot': (-0., 0.),
-    # 'rot': (-5.4, 5.4),
+    # 'rot': (-0., 0.),
+    'rot': (-5.4, 5.4),
     'flip': True,
     'crop_h': (0.0, 0.0),
     'resize_test': 0.00,
 }
-batch_size=1
+batch_size=4
 bev_embed_dims=256
 # Model
 grid_config = {
@@ -93,7 +93,7 @@ voxel_size = [0.1, 0.1, 0.2]
 
 numC_Trans = 80
 
-multi_adj_frame_id_cfg = (1, 2+1, 1)
+multi_adj_frame_id_cfg = (1, 0+1, 1)
 
 model = dict(
     type='BEVDepth4D_Multitask',
@@ -166,7 +166,7 @@ model = dict(
         map_grid_conf=map_grid_conf,
         in_channels=256,
         pred_det=True,
-        pred_seg=False,
+        pred_seg=True,
         pred_vec=False,
         loss_seg=dict(
                 type='CrossEntropyLoss',
@@ -357,8 +357,8 @@ share_data_config = dict(
     modality=input_modality,
     img_info_prototype='bevdet4d',
     multi_adj_frame_id_cfg=multi_adj_frame_id_cfg,
-    version="v1.0-mini",
-    # version="v1.0-trainval",
+    # version="v1.0-mini",
+    version="v1.0-trainval",
 )
 
 test_data_config = dict(
@@ -370,13 +370,13 @@ test_data_config = dict(
 
 data = dict(
     samples_per_gpu=batch_size,
-    workers_per_gpu=4,
+    workers_per_gpu=batch_size,
     shuffle=True,
     train=dict(
         type='CBGSDataset',
         dataset=dict(
         data_root=data_root,
-        ann_file=data_root + 'bevdetv3-nuscenes_infos_train.pkl',
+        ann_file=data_root + 'bevdetv3-nuscenes_infos_trainval.pkl',
         pipeline=train_pipeline,
         classes=class_names,
         test_mode=False,
@@ -388,7 +388,7 @@ data = dict(
     # train=dict(
     #     type='NuScenesDataset',#'CBGSDataset',    
     #     data_root=data_root,
-    #     ann_file=data_root + 'bevdetv3-nuscenes_infos_train.pkl',
+    #     ann_file=data_root + 'bevdetv3-nuscenes_infos_trainval.pkl',
     #     pipeline=train_pipeline,
     #     classes=class_names,
     #     test_mode=False,
@@ -441,5 +441,6 @@ custom_hooks = [
 find_unused_parameters=False
 # fp16 = dict(loss_scale='dynamic')
 # resume_from="work_dirs/bevdepth-segonly160-1015/epoch_5.pth"
-# load_from="ckpts/bevdepthmul-ex4b-ep8.pth"
-load_from="ckpts/det2d_depth_b16_310ep5_fitted.pth"
+# load_from="/root/autodl-fs/workdirs/bevdepthmul-ex4b-ep20.pth"
+# load_from="ckpts/bevdet-r50.pth"
+# load_from="ckpts/det2d_depth_b16_310_e10_fitted.pth"
