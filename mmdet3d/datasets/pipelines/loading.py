@@ -965,7 +965,7 @@ class PrepareImageInputs(object):
     def img_transform(self, img, post_rot, post_tran, resize, resize_dims,
                       crop, flip, rotate,segmask2d=None):
         # adjust image
-        if not self.opencv_pp:
+        if not self.opencv_pp:#not F=T
             img = self.img_transform_core(img, resize_dims, crop, flip, rotate)
             if segmask2d is not None:
                 segmask2d = self.img_transform_core(segmask2d, resize_dims, crop, flip, rotate,resample=Image.NEAREST)
@@ -1002,7 +1002,7 @@ class PrepareImageInputs(object):
     def img_transform_core(self, img, resize_dims, crop, flip, rotate,resample=Image.BICUBIC):
         # adjust image
         img = img.resize(resize_dims,resample=resample)
-        img = img.crop(crop)
+        img = img.crop(crop)#0, 140, 704, 396
         if flip:
             img = img.transpose(method=Image.FLIP_LEFT_RIGHT)
         img = img.rotate(rotate,resample=resample)
@@ -1153,7 +1153,7 @@ class PrepareImageInputs(object):
         results['cam_names'] = cam_names
         canvas = []
         sem_2ds=[]#图像分割
-        for i,cam_name in enumerate(cam_names):
+        for i,cam_name in enumerate(cam_names):#优先遍历视角
             cam_data = results['curr']['cams'][cam_name]
             filename = cam_data['data_path']
             img = Image.open(filename)#img.mode='RGB'
@@ -1173,7 +1173,7 @@ class PrepareImageInputs(object):
                 H=img.height, W=img.width, flip=flip, scale=scale)
             resize, resize_dims, crop, flip, rotate = img_augs
             img, post_rot2, post_tran2,seg2d = \
-                self.img_transform(img, post_rot,#PIL Image
+                self.img_transform(img, post_rot,#PIL Image 1600 900->704 256
                                    post_tran,
                                    resize=resize,
                                    resize_dims=resize_dims,
@@ -1221,9 +1221,9 @@ class PrepareImageInputs(object):
                 img = self.photo_metric_distortion(img, self.data_config['pmd'])
 
             canvas.append(np.array(img))
-            imgs.append(self.normalize_img(img))
+            imgs.append(self.normalize_img(img))#[256,704,3]
 
-            if self.sequential:
+            if self.sequential:#T?
                 assert 'adjacent' in results
                 for adj_info in results['adjacent']:#?
                     filename_adj = adj_info['cams'][cam_name]['data_path']
