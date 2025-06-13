@@ -1,5 +1,5 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-import json
+import json,math
 import tempfile
 from os import path as osp
 
@@ -239,7 +239,7 @@ class NuScenesDataset(Custom3DDataset):
         """
         data = mmcv.load(ann_file, file_format='pkl')
         data_infos = list(sorted(data['infos'], key=lambda e: e['timestamp']))
-        data_infos = data_infos[::self.load_interval]#[:50]#[::2]
+        data_infos = data_infos[::self.load_interval]#[:300]#[::2]
         self.metadata = data['metadata']
         self.version = self.metadata['version']
         stamps=[data_info['timestamp']/1e6 for data_info in data_infos]
@@ -276,6 +276,7 @@ class NuScenesDataset(Custom3DDataset):
             sweeps=info['sweeps'],
             timestamp=info['timestamp'] / 1e6,
             scene_name=info['scene_name'],
+            scene_num=int(info['scene_name'].split('-')[-1]),
             e2g_translation=info['ego2global_translation'],
             e2g_rotation=info['ego2global_rotation'],
             idx=index
@@ -316,7 +317,7 @@ class NuScenesDataset(Custom3DDataset):
                     input_dict['ann_info'] = annos
             else:
                 assert 'bevdet' in self.img_info_prototype
-                input_dict['e2g_mat']=transform_matrix(info['ego2global_translation'],Quaternion(info['ego2global_rotation']))
+                input_dict['e2g_mat']=transform_matrix(info['ego2global_translation'],Quaternion(info['ego2global_rotation'])).astype(np.float32)
                 input_dict.update(dict(curr=info))
                 if '4d' in self.img_info_prototype:
                     info_adj_list = self.get_adj_info(info, index)
@@ -505,7 +506,7 @@ class NuScenesDataset(Custom3DDataset):
         return res_path
 
     def _set_sequence_group_flag(self):
-        """
+        """ from StreamPETR = solofusion
         Set each sequence to be a different group
         """
         res = []
@@ -519,8 +520,8 @@ class NuScenesDataset(Custom3DDataset):
 
         self.flag = np.array(res, dtype=np.int64)
 
-        if self.sequences_split_num != 1:
-            if self.sequences_split_num == 'all':
+        if self.seq_split_num != 1:
+            if self.seq_split_num == 'all':
                 self.flag = np.array(range(len(self.data_infos)), dtype=np.int64)
             else:
                 bin_counts = np.bincount(self.flag)
@@ -530,16 +531,16 @@ class NuScenesDataset(Custom3DDataset):
                     curr_sequence_length = np.array(
                         list(range(0, 
                                 bin_counts[curr_flag], 
-                                math.ceil(bin_counts[curr_flag] / self.sequences_split_num)))
+                                math.ceil(bin_counts[curr_flag] / self.seq_split_num)))
                         + [bin_counts[curr_flag]])
 
-                    for sub_seq_idx in (curr_sequence_length[1:] - curr_sequence_length[:-1]):
+                    for sub_seq_idx in (curr_sequence_length[1:] - curr_sequence_length[:-1]):#每个scene划分为2段
                         for _ in range(sub_seq_idx):
                             new_flags.append(curr_new_flag)
                         curr_new_flag += 1
 
                 assert len(new_flags) == len(self.flag)
-                assert len(np.bincount(new_flags)) == len(np.bincount(self.flag)) * self.sequences_split_num
+                assert len(np.bincount(new_flags)) == len(np.bincount(self.flag)) * self.seq_split_num
                 self.flag = np.array(new_flags, dtype=np.int64)
             
     def _evaluate_single(self,

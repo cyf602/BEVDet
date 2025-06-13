@@ -176,201 +176,82 @@ def sync_random_seed(seed=None, device='cuda'):
 
 @SAMPLER.register_module()
 class InfiniteGroupEachSampleInBatchSampler(Sampler):
-    """
+    """ from solofusion
     Pardon this horrendous name. Basically, we want every sample to be from its own group.
     If batch size is 4 and # of GPUs is 8, each sample of these 32 should be operating on
     its own group.
+
     Shuffling is only done for group order, not done within groups.
-    Arguments:
-        dataset: Dataset used for sampling.
-        min_len: Minimum sequence sampling length
-        max_len: Maximum sequence sampling length
-        num_iters_to_seq: After `num_iters_to_seq` iterations, 
-            start sequential sampling. Default: 0
-        samples_per_gpu (optional): Per gpu batchsize. Default: 1
-        num_replicas (optional): Number of processes participating in
-            distributed training.
-        rank (optional): Rank of the current process within num_replicas.
-        seed (int, optional): random seed used to shuffle the sampler if
-            ``shuffle=True``. This number should be identical across all
-            processes in the distributed group. Default: 0.
     """
 
     def __init__(self, 
                  dataset,
-                 seq_split_num=-1,
-                 num_iters_to_seq=0,
-                 random_drop=0,
                  samples_per_gpu=1,
-                 num_replicas=None,
+                 world_size=None,
                  rank=None,
                  seed=0,
-                 cbgs=True):
+                 **kwargs):
 
-        _rank, _num_replicas = get_dist_info()
-        if num_replicas is None:
-            num_replicas = _num_replicas
+        _rank, _world_size = get_dist_info()
+        if world_size is None:
+            world_size = _world_size
         if rank is None:
             rank = _rank
 
         self.dataset = dataset
-        self.batch_size = samples_per_gpu
-        self.num_replicas = num_replicas
+        self.samples_per_gpu = samples_per_gpu
+        self.world_size = world_size
         self.rank = rank
-        self.seq_split_num = seq_split_num
-        self.sub_seq_generator = torch.Generator()
-        self.sub_seq_generator.manual_seed(self.rank + seed)
         self.seed = sync_random_seed(seed)
-        self.random_drop = random_drop
 
         self.size = len(self.dataset)
-        self._iters = 0
-        self.num_iters_to_seq = num_iters_to_seq
-        
+
         assert hasattr(self.dataset, 'flag')
         self.flag = self.dataset.flag
-        self.group_sizes = np.bincount(self.flag)#对非负整数数组中的元素进行统计计数
-        self.groups_num = len(self.group_sizes)#scene段数，每段长度
-        self.global_batch_size = samples_per_gpu * num_replicas
+        self.group_sizes = np.bincount(self.flag)
+        self.groups_num = len(self.group_sizes)
+        self.global_batch_size = samples_per_gpu * world_size
         assert self.groups_num >= self.global_batch_size
 
-        # Now, for efficiency, make a dict {group_idx: List[dataset sample_idxs]}
+        # Now, for efficiency, make a dict group_idx: List[dataset sample_idxs]
         self.group_idx_to_sample_idxs = {
             group_idx: np.where(self.flag == group_idx)[0].tolist()
-            for group_idx in range(self.groups_num)} #每段Scene对应的samples编号
-
-        self.group_idx_to_sample_idxs_generator = {
-            group_idx: self._sample_sub_sequence(group_idx)
-            for group_idx in range(self.groups_num)
-        }
+            for group_idx in range(self.groups_num)}        
 
         # Get a generator per sample idx. Considering samples over all
         # GPUs, each sample position has its own generator 
         self.group_indices_per_global_sample_idx = [
-            self._group_indices_per_global_sample_idx(self.rank * self.batch_size + local_sample_idx) 
-            for local_sample_idx in range(self.batch_size)]
+            self._group_indices_per_global_sample_idx(self.rank * self.samples_per_gpu + local_sample_idx) 
+            for local_sample_idx in range(self.samples_per_gpu)]
         
         # Keep track of a buffer of dataset sample idxs for each local sample idx
-        self.buffer_per_local_sample = [[] for _ in range(self.batch_size)]
-        self.cbgs=cbgs
-        if cbgs:
-            self.cat2id = {name: i for i, name in enumerate(self.dataset.CLASSES)}
-            self.group_indices_cbgs=self._get_group_indices()
-        
-    def _get_group_indices(self):
-        """Load annotations from ann_file.
-            cbgs group list
-        """
-        sample_group_idxs = {} 
-        for k,vs in self.group_idx_to_sample_idxs.items():
-            for v in vs:
-                sample_group_idxs[v]=k
-        class_sample_idxs = {cat_id: [] for cat_id in self.cat2id.values()}
-        class_group_idxs =  {cat_id: [] for cat_id in self.cat2id.values()}
-        for idx in range(len(self.dataset)):
-            sample_cat_ids = self.dataset.get_cat_ids(idx)#出现过的类别编号
-            for cat_id in sample_cat_ids:
-                class_sample_idxs[cat_id].append(idx)#各类出现的sample idx
-                class_group_idxs[cat_id].append(sample_group_idxs[idx])
-        
-        duplicated_samples = sum(#sample出现总次数
-            [len(v) for _, v in class_sample_idxs.items()])
-        class_distribution = {#各类出现的sample占总出现次数的比例 sum=1
-            k: len(v) / duplicated_samples
-            for k, v in class_sample_idxs.items()
-        }
+        self.buffer_per_local_sample = [[] for _ in range(self.samples_per_gpu)]
 
-
-        frac = 1.0 / len(self.dataset.CLASSES)
-        ratios = [frac / max(v,1e-6) for v in class_distribution.values()]#sum>1 ~13 各类别的某种权重
-        # sample_indices = [] 
-        # for cls_inds, ratio in zip(list(class_sample_idxs.values()), ratios):#每个类出现的sampleid
-        #     sample_indices += np.random.choice(cls_inds,#在每类出现样本中选取一定比例的sample组成新数据
-        #                                        int(len(cls_inds) *
-        #                                            ratio)).tolist()#list,选的数量
-        # group_scores=[]
-        # for groupidx,sample_idxs in self.group_idx_to_sample_idxs.items():
-        #     group_scores.append(0)
-        #     for sample_idx in sample_idxs:#当前场景每一帧
-        #         sample_cat_ids = self.dataset.get_cat_ids(sample_idx)
-        #         for sample_cat_id in sample_cat_ids:#当前帧出现的类别 计算对应权重
-        #             group_scores[-1]+=ratios[sample_cat_id]
-        
-        #选取group
-        groupindices=[]
-        class2group_ratio=self.groups_num /len(self.dataset)
-        for cls_inds, ratio in zip(list(class_group_idxs.values()), ratios):
-            groupindices+=np.random.choice(cls_inds,#在每类出现样本中选取一定比例的sample组成新数据
-                                int(len(cls_inds) *ratio*class2group_ratio)).tolist()
-                    
-                    
-            
-        return groupindices
-    
     def _infinite_group_indices(self):
         g = torch.Generator()
         g.manual_seed(self.seed)
-        while True:#变成循环加载list
-            if self.cbgs:
-                yield from self.group_indices_cbgs
-            else:
-                yield from torch.randperm(self.groups_num, generator=g).tolist()#list l=700
+        while True:
+            yield from torch.randperm(self.groups_num, generator=g).tolist()
 
     def _group_indices_per_global_sample_idx(self, global_sample_idx):
-        yield from itertools.islice(self._infinite_group_indices(), #可以返回从迭代器中的start位置到stop位置的元素
+        yield from itertools.islice(self._infinite_group_indices(), 
                                     global_sample_idx, 
                                     None,
                                     self.global_batch_size)
 
-    def _sample_sub_sequence(self, group_idx):
-        '''randomly split sub-sequences in a whole sequence'''
-
-        sample_ids = self.group_idx_to_sample_idxs[group_idx]
-        while True:
-            if self._iters < self.num_iters_to_seq or self.seq_split_num == -1:
-                shuffled = torch.randperm(len(sample_ids), generator=self.sub_seq_generator).tolist()
-                yield from [[sample_ids[i]] for i in shuffled]
-            
-            else:
-                # split the sequence into parts
-                idx = torch.randperm(len(sample_ids), generator=self.sub_seq_generator).tolist()
-                idx.remove(0)
-                idx = sorted(idx[:self.seq_split_num - 1]) # choose n-1 split position
-                split_idx = [0] + idx + [len(sample_ids)]
-                sub_seq_idx = [sample_ids[split_idx[i]: split_idx[i + 1]] 
-                            for i in range(len(split_idx) - 1)] # [[1,2,3], [4,5], ...]
-                shuffled = torch.randperm(len(sub_seq_idx), generator=self.sub_seq_generator).tolist()
-                for i in shuffled:
-                    sub_seq = sub_seq_idx[i]
-                    length = len(sub_seq)
-                    drop_num = math.floor(length * self.random_drop)
-                    drop_idxs = torch.randperm(length, generator=self.sub_seq_generator).tolist()[:drop_num]
-                    new_sub_seq = [sub_seq[j] for j in range(length) if j not in drop_idxs]
-                    yield new_sub_seq
-                # yield from [sub_seq_idx[i] for i in shuffled]
-        
-
     def __iter__(self):
-        last_group_idx_batch = [-1 for i in range(self.batch_size)]#scene序号
         while True:
             curr_batch = []
-            for local_sample_idx in range(self.batch_size):
+            for local_sample_idx in range(self.samples_per_gpu):
                 if len(self.buffer_per_local_sample[local_sample_idx]) == 0:
-                    # Finished current group, refill with next group 生成场景序号
+                    # Finished current group, refill with next group
                     new_group_idx = next(self.group_indices_per_global_sample_idx[local_sample_idx])
-
-                    # 保证不会连续两段相同的序列
-                    # 如果不加的话，在epoch轮换时会有概率连续两段相同序列
-                    if new_group_idx == last_group_idx_batch[local_sample_idx]:
-                        new_group_idx = next(self.group_indices_per_global_sample_idx[local_sample_idx])
-                    last_group_idx_batch[local_sample_idx] = new_group_idx#当前/新group编号
-                    #当前序列还有哪些samples
                     self.buffer_per_local_sample[local_sample_idx] = \
-                        copy.deepcopy(next(self.group_idx_to_sample_idxs_generator[new_group_idx]))
+                        copy.deepcopy(
+                            self.group_idx_to_sample_idxs[new_group_idx])
 
                 curr_batch.append(self.buffer_per_local_sample[local_sample_idx].pop(0))
             
-            self._iters += 1
             yield curr_batch
 
     def __len__(self):
@@ -379,3 +260,361 @@ class InfiniteGroupEachSampleInBatchSampler(Sampler):
         
     def set_epoch(self, epoch):
         self.epoch = epoch
+
+
+# @SAMPLER.register_module()
+# class InfiniteGroupEachSampleInBatchSampler(Sampler):
+#     """ from StreamMapNet
+#     Pardon this horrendous name. Basically, we want every sample to be from its own group.
+#     If batch size is 4 and # of GPUs is 8, each sample of these 32 should be operating on
+#     its own group.
+#     Shuffling is only done for group order, not done within groups.
+#     Arguments:
+#         dataset: Dataset used for sampling.
+#         min_len: Minimum sequence sampling length
+#         max_len: Maximum sequence sampling length
+#         num_iters_to_seq: After `num_iters_to_seq` iterations, 
+#             start sequential sampling. Default: 0
+#         samples_per_gpu (optional): Per gpu batchsize. Default: 1
+#         num_replicas (optional): Number of processes participating in
+#             distributed training.
+#         rank (optional): Rank of the current process within num_replicas.
+#         seed (int, optional): random seed used to shuffle the sampler if
+#             ``shuffle=True``. This number should be identical across all
+#             processes in the distributed group. Default: 0.
+#     """
+
+#     def __init__(self, 
+#                  dataset,
+#                  seq_split_num=-1,
+#                  num_iters_to_seq=0,
+#                  random_drop=0,
+#                  samples_per_gpu=1,
+#                  num_replicas=None,
+#                  rank=None,
+#                  seed=0):
+
+#         _rank, _num_replicas = get_dist_info()
+#         if num_replicas is None:
+#             num_replicas = _num_replicas
+#         if rank is None:
+#             rank = _rank
+
+#         self.dataset = dataset
+#         self.samples_per_gpu = samples_per_gpu
+#         self.num_replicas = num_replicas
+#         self.rank = rank
+#         self.seq_split_num = seq_split_num
+#         self.sub_seq_generator = torch.Generator()
+#         self.sub_seq_generator.manual_seed(self.rank + seed)
+#         self.seed = sync_random_seed(seed)
+#         self.random_drop = random_drop
+
+#         self.size = len(self.dataset)
+#         self._iters = 0
+#         self.num_iters_to_seq = num_iters_to_seq
+        
+#         assert hasattr(self.dataset, 'flag')
+#         self.flag = self.dataset.flag
+#         self.group_sizes = np.bincount(self.flag)
+#         self.groups_num = len(self.group_sizes)
+#         self.global_batch_size = samples_per_gpu * num_replicas
+#         assert self.groups_num >= self.global_batch_size
+
+#         # Now, for efficiency, make a dict {group_idx: List[dataset sample_idxs]}
+#         self.group_idx_to_sample_idxs = {
+#             group_idx: np.where(self.flag == group_idx)[0].tolist()
+#             for group_idx in range(self.groups_num)} 
+
+#         self.group_idx_to_sample_idxs_generator = {
+#             group_idx: self._sample_sub_sequence(group_idx)
+#             for group_idx in range(self.groups_num)
+#         }
+
+#         # Get a generator per sample idx. Considering samples over all
+#         # GPUs, each sample position has its own generator 
+#         self.group_indices_per_global_sample_idx = [
+#             self._group_indices_per_global_sample_idx(self.rank * self.samples_per_gpu + local_sample_idx) 
+#             for local_sample_idx in range(self.samples_per_gpu)]
+        
+#         # Keep track of a buffer of dataset sample idxs for each local sample idx
+#         self.buffer_per_local_sample = [[] for _ in range(self.samples_per_gpu)]
+
+#     def _infinite_group_indices(self):
+#         g = torch.Generator()
+#         g.manual_seed(self.seed)
+#         while True:
+#             yield from torch.randperm(self.groups_num, generator=g).tolist()
+
+#     def _group_indices_per_global_sample_idx(self, global_sample_idx):
+#         yield from itertools.islice(self._infinite_group_indices(), 
+#                                     global_sample_idx, 
+#                                     None,
+#                                     self.global_batch_size)
+
+#     # def _sample_sub_sequence(self, group_idx):
+#     #     '''randomly split sub-sequences in a whole sequence'''
+
+#     #     sample_ids = self.group_idx_to_sample_idxs[group_idx]
+#     #     while True:
+#     #         if self._iters < self.num_iters_to_seq or self.seq_split_num == -1:
+#     #             shuffled = torch.randperm(len(sample_ids), generator=self.sub_seq_generator).tolist()
+#     #             yield from [[sample_ids[i]] for i in shuffled]
+            
+#     #         else:
+#     #             # split the sequence into parts
+#     #             idx = torch.randperm(len(sample_ids), generator=self.sub_seq_generator).tolist()
+#     #             idx.remove(0)
+#     #             idx = sorted(idx[:self.seq_split_num - 1]) # choose n-1 split position
+#     #             split_idx = [0] + idx + [len(sample_ids)]
+#     #             sub_seq_idx = [sample_ids[split_idx[i]: split_idx[i + 1]] 
+#     #                         for i in range(len(split_idx) - 1)] # [[1,2,3], [4,5], ...]
+#     #             shuffled = torch.randperm(len(sub_seq_idx), generator=self.sub_seq_generator).tolist()
+#     #             for i in shuffled:
+#     #                 sub_seq = sub_seq_idx[i]
+#     #                 length = len(sub_seq)
+#     #                 drop_num = math.floor(length * self.random_drop)
+#     #                 drop_idxs = torch.randperm(length, generator=self.sub_seq_generator).tolist()[:drop_num]
+#     #                 new_sub_seq = [sub_seq[j] for j in range(length) if j not in drop_idxs]
+#     #                 yield new_sub_seq
+#                 # yield from [sub_seq_idx[i] for i in shuffled]
+        
+
+#     def __iter__(self):
+#         last_group_idx_batch = [-1 for i in range(self.samples_per_gpu)]
+#         while True:
+#             curr_batch = []
+#             for local_sample_idx in range(self.samples_per_gpu):
+#                 if len(self.buffer_per_local_sample[local_sample_idx]) == 0:
+#                     # Finished current group, refill with next group
+#                     new_group_idx = next(self.group_indices_per_global_sample_idx[local_sample_idx])
+
+#                     # 保证不会连续两段相同的序列
+#                     # 如果不加的话，在epoch轮换时会有概率连续两段相同序列
+#                     if new_group_idx == last_group_idx_batch[local_sample_idx]:
+#                         new_group_idx = next(self.group_indices_per_global_sample_idx[local_sample_idx])
+#                     last_group_idx_batch[local_sample_idx] = new_group_idx
+
+#                     self.buffer_per_local_sample[local_sample_idx] = \
+#                         copy.deepcopy(next(self.group_idx_to_sample_idxs_generator[new_group_idx]))
+
+#                 curr_batch.append(self.buffer_per_local_sample[local_sample_idx].pop(0))
+            
+#             self._iters += 1
+#             yield curr_batch
+
+#     def __len__(self):
+#         """Length of base dataset."""
+#         return self.size
+        
+#     def set_epoch(self, epoch):
+#         self.epoch = epoch
+
+# @SAMPLER.register_module()
+# class InfiniteGroupEachSampleInBatchSampler(Sampler):
+#     """
+#     Pardon this horrendous name. Basically, we want every sample to be from its own group.
+#     If batch size is 4 and # of GPUs is 8, each sample of these 32 should be operating on
+#     its own group.
+#     Shuffling is only done for group order, not done within groups.
+#     Arguments:
+#         dataset: Dataset used for sampling.
+#         min_len: Minimum sequence sampling length
+#         max_len: Maximum sequence sampling length
+#         num_iters_to_seq: After `num_iters_to_seq` iterations, 
+#             start sequential sampling. Default: 0
+#         samples_per_gpu (optional): Per gpu batchsize. Default: 1
+#         num_replicas (optional): Number of processes participating in
+#             distributed training.
+#         rank (optional): Rank of the current process within num_replicas.
+#         seed (int, optional): random seed used to shuffle the sampler if
+#             ``shuffle=True``. This number should be identical across all
+#             processes in the distributed group. Default: 0.
+#     """
+
+#     def __init__(self, 
+#                  dataset,
+#                  seq_split_num=-1,
+#                  num_iters_to_seq=0,
+#                  random_drop=0,
+#                  samples_per_gpu=1,
+#                  num_replicas=None,
+#                  rank=None,
+#                  seed=0,
+#                  cbgs=False):
+
+#         _rank, _num_replicas = get_dist_info()
+#         if num_replicas is None:
+#             num_replicas = _num_replicas
+#         if rank is None:
+#             rank = _rank
+
+#         self.dataset = dataset
+#         self.samples_per_gpu = samples_per_gpu
+#         self.num_replicas = num_replicas
+#         self.rank = rank
+#         self.seq_split_num = seq_split_num
+#         self.sub_seq_generator = torch.Generator()
+#         self.sub_seq_generator.manual_seed(self.rank + seed)
+#         self.seed = sync_random_seed(seed)
+#         self.random_drop = random_drop
+
+#         self.size = len(self.dataset)
+#         self._iters = 0
+#         self.num_iters_to_seq = num_iters_to_seq
+        
+#         assert hasattr(self.dataset, 'flag')
+#         self.flag = self.dataset.flag
+#         self.group_sizes = np.bincount(self.flag)#对非负整数数组中的元素进行统计计数
+#         self.groups_num = len(self.group_sizes)#scene段数，每段长度
+#         self.global_batch_size = samples_per_gpu * num_replicas
+#         assert self.groups_num >= self.global_batch_size
+
+#         # Now, for efficiency, make a dict {group_idx: List[dataset sample_idxs]}
+#         self.group_idx_to_sample_idxs = {
+#             group_idx: np.where(self.flag == group_idx)[0].tolist()
+#             for group_idx in range(self.groups_num)} #每段Scene对应的samples编号
+
+#         # self.group_idx_to_sample_idxs_generator = {
+#         #     group_idx: self._sample_sub_sequence(group_idx)
+#         #     for group_idx in range(self.groups_num)
+#         # }
+
+#         # Get a generator per sample idx. Considering samples over all
+#         # GPUs, each sample position has its own generator 
+#         self.group_indices_per_global_sample_idx = [
+#             self._group_indices_per_global_sample_idx(self.rank * self.samples_per_gpu + local_sample_idx) 
+#             for local_sample_idx in range(self.samples_per_gpu)]
+        
+#         # Keep track of a buffer of dataset sample idxs for each local sample idx
+#         self.buffer_per_local_sample = [[] for _ in range(self.samples_per_gpu)]
+#         # self.cbgs=cbgs
+#         # if cbgs:
+#         #     self.cat2id = {name: i for i, name in enumerate(self.dataset.CLASSES)}
+#         #     self.group_indices_cbgs=self._get_group_indices()
+        
+#     def _get_group_indices(self):
+#         """Load annotations from ann_file.
+#             cbgs group list
+#         """
+#         sample_group_idxs = {} 
+#         for k,vs in self.group_idx_to_sample_idxs.items():
+#             for v in vs:
+#                 sample_group_idxs[v]=k
+#         class_sample_idxs = {cat_id: [] for cat_id in self.cat2id.values()}
+#         class_group_idxs =  {cat_id: [] for cat_id in self.cat2id.values()}
+#         for idx in range(len(self.dataset)):
+#             sample_cat_ids = self.dataset.get_cat_ids(idx)#出现过的类别编号
+#             for cat_id in sample_cat_ids:
+#                 class_sample_idxs[cat_id].append(idx)#各类出现的sample idx
+#                 class_group_idxs[cat_id].append(sample_group_idxs[idx])
+        
+#         duplicated_samples = sum(#sample出现总次数
+#             [len(v) for _, v in class_sample_idxs.items()])
+#         class_distribution = {#各类出现的sample占总出现次数的比例 sum=1
+#             k: len(v) / duplicated_samples
+#             for k, v in class_sample_idxs.items()
+#         }
+
+
+#         frac = 1.0 / len(self.dataset.CLASSES)
+#         ratios = [frac / max(v,1e-6) for v in class_distribution.values()]#sum>1 ~13 各类别的某种权重
+#         # sample_indices = [] 
+#         # for cls_inds, ratio in zip(list(class_sample_idxs.values()), ratios):#每个类出现的sampleid
+#         #     sample_indices += np.random.choice(cls_inds,#在每类出现样本中选取一定比例的sample组成新数据
+#         #                                        int(len(cls_inds) *
+#         #                                            ratio)).tolist()#list,选的数量
+#         # group_scores=[]
+#         # for groupidx,sample_idxs in self.group_idx_to_sample_idxs.items():
+#         #     group_scores.append(0)
+#         #     for sample_idx in sample_idxs:#当前场景每一帧
+#         #         sample_cat_ids = self.dataset.get_cat_ids(sample_idx)
+#         #         for sample_cat_id in sample_cat_ids:#当前帧出现的类别 计算对应权重
+#         #             group_scores[-1]+=ratios[sample_cat_id]
+        
+#         #选取group
+#         groupindices=[]
+#         class2group_ratio=self.groups_num /len(self.dataset)
+#         for cls_inds, ratio in zip(list(class_group_idxs.values()), ratios):
+#             groupindices+=np.random.choice(cls_inds,#在每类出现样本中选取一定比例的sample组成新数据
+#                                 int(len(cls_inds) *ratio*class2group_ratio)).tolist()
+                    
+                    
+            
+#         return groupindices
+    
+#     def _infinite_group_indices(self):
+#         g = torch.Generator()
+#         g.manual_seed(self.seed)
+#         while True:#变成循环加载list
+#             # if self.cbgs:
+#             #     yield from self.group_indices_cbgs
+#             # else:
+#             yield from torch.randperm(self.groups_num, generator=g).tolist()#list l=700
+
+#     def _group_indices_per_global_sample_idx(self, global_sample_idx):
+#         yield from itertools.islice(self._infinite_group_indices(), #可以返回从迭代器中的start位置到stop位置的元素
+#                                     global_sample_idx, 
+#                                     None,
+#                                     self.global_batch_size)
+
+#     def _sample_sub_sequence(self, group_idx):
+#         '''randomly split sub-sequences in a whole sequence'''
+
+#         sample_ids = self.group_idx_to_sample_idxs[group_idx]
+#         while True:
+#             if self._iters < self.num_iters_to_seq or self.seq_split_num == -1:
+#                 shuffled = torch.randperm(len(sample_ids), generator=self.sub_seq_generator).tolist()
+#                 yield from [[sample_ids[i]] for i in shuffled]
+            
+#             else:
+#                 # split the sequence into parts
+#                 idx = torch.randperm(len(sample_ids), generator=self.sub_seq_generator).tolist()
+#                 idx.remove(0)
+#                 idx = sorted(idx[:self.seq_split_num - 1]) # choose n-1 split position
+#                 split_idx = [0] + idx + [len(sample_ids)]
+#                 sub_seq_idx = [sample_ids[split_idx[i]: split_idx[i + 1]] 
+#                             for i in range(len(split_idx) - 1)] # [[1,2,3], [4,5], ...]
+#                 shuffled = torch.randperm(len(sub_seq_idx), generator=self.sub_seq_generator).tolist()
+#                 for i in shuffled:
+#                     sub_seq = sub_seq_idx[i]
+#                     length = len(sub_seq)
+#                     drop_num = math.floor(length * self.random_drop)
+#                     drop_idxs = torch.randperm(length, generator=self.sub_seq_generator).tolist()[:drop_num]
+#                     new_sub_seq = [sub_seq[j] for j in range(length) if j not in drop_idxs]
+#                     yield new_sub_seq
+#                 # yield from [sub_seq_idx[i] for i in shuffled]
+        
+
+#     def __iter__(self):
+#         # last_group_idx_batch = [-1 for i in range(self.samples_per_gpu)]#scene序号
+#         while True:
+#             curr_batch = []
+#             for local_sample_idx in range(self.samples_per_gpu):
+#                 if len(self.buffer_per_local_sample[local_sample_idx]) == 0:
+#                     # Finished current group, refill with next group 生成场景序号
+#                     new_group_idx = next(self.group_indices_per_global_sample_idx[local_sample_idx])
+
+#                     # # 保证不会连续两段相同的序列#StreamMapNet
+#                     # # 如果不加的话，在epoch轮换时会有概率连续两段相同序列
+#                     # if new_group_idx == last_group_idx_batch[local_sample_idx]:
+#                     #     new_group_idx = next(self.group_indices_per_global_sample_idx[local_sample_idx])
+#                     # last_group_idx_batch[local_sample_idx] = new_group_idx#当前/新group编号
+#                     # #当前序列还有哪些samples
+#                     # self.buffer_per_local_sample[local_sample_idx] = \
+#                     #     copy.deepcopy(next(self.group_idx_to_sample_idxs_generator[new_group_idx]))
+
+#                     self.buffer_per_local_sample[local_sample_idx] = \
+#                         copy.deepcopy(
+#                             self.group_idx_to_sample_idxs[new_group_idx])
+#                 curr_batch.append(self.buffer_per_local_sample[local_sample_idx].pop(0))
+            
+#             self._iters += 1
+#             yield curr_batch
+
+#     def __len__(self):
+#         """Length of base dataset."""
+#         return self.size
+        
+#     def set_epoch(self, epoch):
+#         self.epoch = epoch

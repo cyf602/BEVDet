@@ -15,7 +15,7 @@ class EgoPoseDataset(Dataset):
     def __init__(self, data_infos, dataset_type=None):
         super(EgoPoseDataset, self).__init__()
 
-        self.data_infos = data_infos#[:100]
+        self.data_infos = data_infos#[:300]#[::5]
         assert dataset_type in ['openocc_v2', 'lightwheelocc']
         self.dataset_type = dataset_type
 

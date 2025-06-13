@@ -171,7 +171,7 @@ class NuScenesDatasetOccpancyv2(NuScenesDatasetOccpancy):#for openoccv2
             elif self.load_interval == 1:
                 print('[WARNING] Please set `load_interval` to 5 in for LightwheelOcc val/test!')
                 print('[WARNING] Current format_results will continue!')
-                data_infos = self.data_infos[::5]
+                data_infos = self.data_infos#[::5]
             else:
                 raise ValueError('Please set `load_interval` to 5 in for LightwheelOcc val/test!')
 

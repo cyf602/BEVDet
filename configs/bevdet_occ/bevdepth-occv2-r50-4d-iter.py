@@ -147,25 +147,25 @@ model = dict(
         num_channels=[numC_Trans,],
         stride=[1,],
         backbone_output_ids=[0,]),
-    flow_cross_cfg=dict(
-        type="swin",
-        embed_dims=64,
-        feedforward_channels=64,#ffn隐藏层
-        window_size=8,#12
-        num_heads=4,
-        depth=2,#block数量
-        # drop_path_rate=0.,#随机深度
-    ),
     # flow_cross_cfg=dict(
-    #     type="deconv",
-    #     in_channels=64,
-    #     out_channels=64,
-    #     kernel_size=3,
-    #     norm_cfg=dict(type='BN', requires_grad=True),
-    #     conv_cfg = dict(type='DCNv2'),
-    #     n_layers=2,#最后一层调整通道数
-    #     padding=1,
+    #     type="swin",
+    #     embed_dims=64,
+    #     feedforward_channels=64,#ffn隐藏层
+    #     window_size=8,#12
+    #     num_heads=4,
+    #     depth=2,#block数量
+    #     # drop_path_rate=0.,#随机深度
     # ),
+    flow_cross_cfg=dict(
+        type="deconv",
+        in_channels=64,
+        out_channels=64,
+        kernel_size=3,
+        norm_cfg=dict(type='BN', requires_grad=True),
+        conv_cfg = dict(type='DCNv2'),
+        n_layers=2,#最后一层调整通道数
+        padding=1,
+    ),
     loss_occ=dict(
         type='CrossEntropyLoss',
         use_sigmoid=False,
@@ -244,7 +244,7 @@ test_pipeline = [
                 class_names=class_names,
                 with_label=False),
             dict(type='Collect3D', keys=['points', 'img_inputs',
-                'voxel_semantics','voxel_flow','scene_num'])
+                'voxel_semantics','voxel_flow','scene_num','e2g_mat'])
         ])
 ]
 
@@ -266,7 +266,7 @@ share_data_config = dict(
 
 test_data_config = dict(
     pipeline=test_pipeline,
-    ann_file=data_root + 'bevdetv3-nuscenes_infos_val.pkl')
+    ann_file=data_root + 'bevdetv3-nuscenes_infos_train.pkl')
 
 data = dict(
     samples_per_gpu=batch_size,
@@ -331,6 +331,7 @@ lr_config = dict(
 #     min_lr_ratio=1e-3)
 checkpoint_config = dict(interval=num_iters_per_epoch)
 evaluation = dict(interval=num_iters_per_epoch*60, pipeline=test_pipeline,tmpdir="/root/autodl-tmp/eval_tmp_dir")
+# evaluation = dict(interval=100, pipeline=test_pipeline,tmpdir="/root/autodl-tmp/eval_tmp_dir")
 runner = dict(type='IterBasedRunner', max_iters=num_epochs * num_iters_per_epoch)
 
 # checkpoint_config = dict(interval=1)
@@ -344,8 +345,8 @@ runner = dict(type='IterBasedRunner', max_iters=num_epochs * num_iters_per_epoch
 #         priority='NORMAL',
 #     ),
 # ]
-# resume_from="work_dirs/bevdepthocc_pretrainseg2d_yolopsegep5_408/epoch_24.pth"
+# resume_from="work_dirs/bevdepthocc-iter-b4-deconv-521/iter_29886.pth"
 # resume_from="work_dirs/bevdepthocc-0207/epoch_6.pth"
 # fp16 = dict(loss_scale='dynamic')
-# load_from="work_dirs/seg2d-depth_yolohead_wdecay1e-2_0408/epoch_1_fitted.pth"
+# load_from="work_dirs/bevdepthocc-iter-b4-deconv-521/iter_7032.pth"
 # load_from="ckpts/occ-base-ep30.pth"
